@@ -14,13 +14,13 @@ export function FinanceMark({ size, rounded = true }: { size: number; rounded?: 
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#0F1830",
+        background: "#000000",
         borderRadius: radius,
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-end", gap }}>
-        <div style={{ width: barW, height: barBaseH, background: "#8792AD", borderRadius: barRadius }} />
-        <div style={{ width: barW, height: barMidH, background: "#8792AD", borderRadius: barRadius }} />
+        <div style={{ width: barW, height: barBaseH, background: "#8A703A", borderRadius: barRadius }} />
+        <div style={{ width: barW, height: barMidH, background: "#B6924E", borderRadius: barRadius }} />
         <div style={{ width: barW, height: barTopH, background: "#D4AF6A", borderRadius: barRadius }} />
       </div>
     </div>

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Inter } from "next/font/google";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase/client";
+import { supabase, setRememberMe } from "@/lib/supabase/client";
 import * as db from "@/lib/supabase/db";
 import type { TxType, Tx, Monthly, DebtPayment, Debt, Settings, Account, AccountKind } from "@/lib/types";
 
@@ -44,6 +44,13 @@ const money=(n:number,sym:string,compact=false)=>{
 const sym=(code:string)=>CURRENCIES.find(c=>c.code===code)?.symbol||"$";
 const ordinal=(n:number)=>{const s=["th","st","nd","rd"],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);};
 const daysUntil=(d?:string)=>{if(!d)return null;return Math.ceil((new Date(d).getTime()-Date.now())/86400000);};
+const daysUntilDueDay=(dueDay:number)=>{
+  const now=new Date();
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  let candidate=new Date(now.getFullYear(),now.getMonth(),dueDay);
+  if(candidate<today)candidate=new Date(now.getFullYear(),now.getMonth()+1,dueDay);
+  return Math.round((candidate.getTime()-today.getTime())/86400000);
+};
 
 // ── SVG ICONS ─────────────────────────────────────────────────────────────────
 const G=({d,s=20,c="currentColor",sw=1.7}:{d:string|string[];s?:number;c?:string;sw?:number})=>(
@@ -71,6 +78,9 @@ const IC={
   trend:"M23 6l-9.5 9.5-5-5L1 18",
   card:["M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z","M2 10h20"],
   coin:["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z","M12 6.5v11","M14.8 9a2.6 2.6 0 0 0-2.6-2H11a2.3 2.3 0 0 0 0 4.6h2a2.3 2.3 0 0 1 0 4.6h-1.4a2.6 2.6 0 0 1-2.6-2"],
+  eye:["M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z","M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],
+  eyeOff:["M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.7 18.7 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24","M1 1l22 22"],
+  bell:["M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9","M13.73 21a2 2 0 0 1-3.46 0"],
 };
 
 // ── SHARED UI ──────────────────────────────────────────────────────────────────
@@ -167,22 +177,34 @@ const Sheet=({open,onClose,title,children,tall}:{open:boolean;onClose:()=>void;t
 };
 
 // ── FORM FIELDS ────────────────────────────────────────────────────────────────
-const Inp=({label,type="text",val,onChange,placeholder,min,max,autoFocus}:{label:string;type?:string;val:string;onChange:(v:string)=>void;placeholder?:string;min?:string;max?:string;autoFocus?:boolean})=>(
-  <div>
-    <Lbl>{label}</Lbl>
-    <input type={type} value={val} onChange={e=>onChange(e.target.value)} placeholder={placeholder} min={min} max={max} autoFocus={autoFocus}
-      style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,padding:"14px 16px",color:D.t1,fontSize:15,fontWeight:500,outline:"none",fontFamily:"inherit",transition:"border-color .2s"}}
-      onFocus={e=>{e.target.style.borderColor=D.gold;e.target.style.boxShadow=`0 0 0 3px ${D.goldDim}`;}}
-      onBlur={e=>{e.target.style.borderColor=D.b1;e.target.style.boxShadow="none";}}
-    />
-  </div>
-);
+const Inp=({label,type="text",val,onChange,placeholder,min,max,autoFocus}:{label:string;type?:string;val:string;onChange:(v:string)=>void;placeholder?:string;min?:string;max?:string;autoFocus?:boolean})=>{
+  const [reveal,setReveal]=useState(false);
+  const isPw=type==="password";
+  return(
+    <div>
+      <Lbl>{label}</Lbl>
+      <div style={{position:"relative"}}>
+        <input type={isPw&&reveal?"text":type} value={val} onChange={e=>onChange(e.target.value)} placeholder={placeholder} min={min} max={max} autoFocus={autoFocus}
+          style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,padding:isPw?"14px 46px 14px 16px":"14px 16px",color:D.t1,fontSize:16,fontWeight:500,outline:"none",fontFamily:"inherit",transition:"border-color .2s"}}
+          onFocus={e=>{e.target.style.borderColor=D.gold;e.target.style.boxShadow=`0 0 0 3px ${D.goldDim}`;}}
+          onBlur={e=>{e.target.style.borderColor=D.b1;e.target.style.boxShadow="none";}}
+        />
+        {isPw&&(
+          <button type="button" onClick={()=>setReveal(r=>!r)} aria-label={reveal?"Hide password":"Show password"}
+            style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:D.t2,padding:4,display:"flex"}}>
+            <G d={reveal?IC.eyeOff:IC.eye} s={18}/>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const Sel=({label,val,onChange,opts}:{label:string;val:string;onChange:(v:string)=>void;opts:{v:string;l:string}[]})=>(
   <div>
     <Lbl>{label}</Lbl>
     <select value={val} onChange={e=>onChange(e.target.value)}
-      style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,padding:"14px 16px",color:val?D.t1:D.t2,fontSize:15,fontWeight:500,outline:"none",fontFamily:"inherit",cursor:"pointer"}}>
+      style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,padding:"14px 16px",color:val?D.t1:D.t2,fontSize:16,fontWeight:500,outline:"none",fontFamily:"inherit",cursor:"pointer"}}>
       <option value="">Select…</option>
       {opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
     </select>
@@ -570,6 +592,10 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const mMyCut=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+(t.myShare||0),0)-mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+(t.myShare||0),0);
   const mPerOut=mTxs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+t.amount,0);
 
+  const upcomingMonthly=monthly.filter(m=>m.active).map(m=>({...m,daysUntil:daysUntilDueDay(m.dueDay)})).sort((a,b)=>a.daysUntil-b.daysUntil);
+  const dueSoonCount=upcomingMonthly.filter(m=>m.daysUntil<=7).length;
+  const [notifOpen,setNotifOpen]=useState(false);
+
   const openSheet=(key:string,debt?:Debt)=>setSheet({open:true,key,debt});
   const closeSheet=()=>setSheet({open:false,key:""});
 
@@ -769,7 +795,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <Lbl>Total Savings</Lbl>
               <input type="number" value={savingsInput} onChange={e=>setSavingsInput(e.target.value)} autoFocus placeholder={`${S} 0.00`}
-                style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:12,padding:"12px 14px",color:D.t1,fontSize:15,fontWeight:600,outline:"none",fontFamily:"inherit"}}/>
+                style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:12,padding:"12px 14px",color:D.t1,fontSize:16,fontWeight:600,outline:"none",fontFamily:"inherit"}}/>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>setEditingSavings(false)} style={{flex:1,padding:"11px",background:"transparent",border:`1px solid ${D.b1}`,borderRadius:10,color:D.t2,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
                 <button onClick={saveSavings} style={{flex:1,padding:"11px",background:D.gold,border:"none",borderRadius:10,color:D.bg,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
@@ -1094,6 +1120,15 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         {tab==="settings"&&<SettingsTab/>}
       </div>
 
+      {/* Notifications */}
+      <button onClick={()=>setNotifOpen(true)} aria-label="Notifications"
+        style={{position:"fixed",top:16,right:"max(16px, calc(50vw - 224px))",width:42,height:42,borderRadius:14,background:"rgba(17,26,51,0.9)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",border:`1px solid ${D.b2}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}>
+        <G d={IC.bell} s={19} c={dueSoonCount>0?D.gold:D.t2}/>
+        {dueSoonCount>0&&(
+          <span style={{position:"absolute",top:5,right:5,minWidth:16,height:16,borderRadius:8,background:D.rose,color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px"}}>{dueSoonCount}</span>
+        )}
+      </button>
+
       {/* Quick add — daily expense, reachable from any tab */}
       {tab!=="settings"&&!sheet.open&&(
         <button onClick={()=>openSheet("personal_out")} aria-label="Add expense"
@@ -1121,6 +1156,27 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           {sheetBody()}
         </Sheet>
       )}
+
+      {/* Notifications panel */}
+      <Sheet open={notifOpen} onClose={()=>setNotifOpen(false)} title="Upcoming Payments">
+        {upcomingMonthly.length===0
+          ?<div style={{textAlign:"center" as const,padding:"32px 0",color:D.t2,fontSize:14}}>No recurring payments set up yet.</div>
+          :upcomingMonthly.map(m=>{
+            const c=m.daysUntil<=3?D.rose:m.daysUntil<=7?D.gold:D.t2;
+            return(
+              <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 0",borderBottom:`1px solid ${D.b0}`}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:D.t1}}>{m.name}</div>
+                  <div style={{fontSize:12,color:D.t2,marginTop:2}}>{m.scope==="company"?"Company":"Personal"} · Due {ordinal(m.dueDay)}</div>
+                </div>
+                <div style={{textAlign:"right" as const}}>
+                  <div style={{fontSize:14,fontWeight:700,color:D.t1}}>{money(m.amount,sym(m.currency))}</div>
+                  <div style={{fontSize:11,fontWeight:700,color:c,marginTop:2}}>{m.daysUntil===0?"Today":m.daysUntil===1?"Tomorrow":`${m.daysUntil}d`}</div>
+                </div>
+              </div>
+            );
+          })}
+      </Sheet>
     </div>
   );
 }
@@ -1129,6 +1185,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 const LoginScreen=()=>{
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
+  const [remember,setRemember]=useState(true);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const ok=!!email&&!!password;
@@ -1137,6 +1194,7 @@ const LoginScreen=()=>{
     if(!ok||busy)return;
     setBusy(true);setError("");
     try{
+      setRememberMe(remember);
       const {error}=await supabase.auth.signInWithPassword({email,password});
       if(error)throw error;
     }catch(err){
@@ -1150,8 +1208,8 @@ const LoginScreen=()=>{
     <div className={font.className} style={{background:D.bg,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,color:D.t1}}>
       <div style={{width:"100%",maxWidth:360}}>
         <div style={{textAlign:"center" as const,marginBottom:32}}>
-          <div style={{width:56,height:56,borderRadius:16,background:D.gold,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-            <G d={IC.trend} s={26} c="#fff"/>
+          <div style={{width:56,height:56,borderRadius:16,background:"#000",border:`1px solid ${D.gold}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+            <G d={IC.trend} s={26} c={D.gold}/>
           </div>
           <div style={{fontSize:22,fontWeight:800,letterSpacing:"-0.02em"}}>Finance OS</div>
           <div style={{fontSize:13,color:D.t2,marginTop:4}}>Sign in to your account</div>
@@ -1159,6 +1217,12 @@ const LoginScreen=()=>{
         <div style={{display:"flex",flexDirection:"column",gap:16}}>
           <Inp label="Email" type="email" val={email} onChange={setEmail} placeholder="you@example.com" autoFocus/>
           <Inp label="Password" type="password" val={password} onChange={setPassword} placeholder="Your password"/>
+          <button type="button" onClick={()=>setRemember(r=>!r)} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>
+            <div style={{width:19,height:19,borderRadius:6,background:remember?D.gold:"transparent",border:`1.5px solid ${remember?D.gold:D.b2}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              {remember&&<G d={IC.check} s={12} c={D.bg} sw={3}/>}
+            </div>
+            <span style={{fontSize:13,color:D.t2,fontWeight:500}}>Remember me</span>
+          </button>
           {error&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{error}</div>}
           <PrimaryBtn label={busy?"Please wait…":"Sign In"} onClick={submit} disabled={!ok||busy}/>
         </div>
