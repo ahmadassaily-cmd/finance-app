@@ -1,16 +1,12 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { Inter } from "next/font/google";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase/client";
+import * as db from "@/lib/supabase/db";
+import type { TxType, Tx, Monthly, DebtPayment, Debt, Settings } from "@/lib/types";
 
 const font = Inter({ subsets: ["latin"], display: "swap", weight: ["400","500","600","700"] });
-
-// ── TYPES ──────────────────────────────────────────────────────────────────────
-type TxType = "company_in" | "company_out" | "personal_in" | "personal_out";
-interface Tx { id:string; type:TxType; amount:number; description:string; category:string; date:string; notes?:string; currency:string; createdAt:string; myShare?:number; payment?:"cash"|"debit"|"credit"; card?:string; }
-interface Monthly { id:string; scope:"personal"|"company"; name:string; amount:number; currency:string; dueDay:number; category:string; notes?:string; active:boolean; createdAt:string; }
-interface DebtPayment { id:string; date:string; amount:number; note?:string; }
-interface Debt { id:string; personBank:string; totalAmount:number; currency:string; description:string; dueDate?:string; notes?:string; payments:DebtPayment[]; createdAt:string; }
-interface Settings { currency:string; name:string; }
 
 // ── CONSTANTS ──────────────────────────────────────────────────────────────────
 const CURRENCIES = [
@@ -41,10 +37,6 @@ const D = {
 // ── UTILS ──────────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2,7)+Date.now().toString(36).slice(-3);
 const today = () => new Date().toISOString().slice(0,10);
-const LS = {
-  get:<T,>(k:string,d:T):T=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}},
-  set:<T,>(k:string,v:T)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}},
-};
 const money=(n:number,sym:string,compact=false)=>{
   if(compact&&Math.abs(n)>=1e6)return sym+(n/1e6).toFixed(1)+"M";
   if(compact&&Math.abs(n)>=1e3)return sym+(n/1e3).toFixed(1)+"K";
@@ -372,7 +364,7 @@ const PayForm=({debt,onPay,onClose}:{debt:Debt;onPay:(n:number,note:string,date:
 };
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────────
-export default function FinanceOS(){
+function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const [tab,setTab]=useState("home");
   const [txs,setTxs]=useState<Tx[]>([]);
   const [monthly,setMonthly]=useState<Monthly[]>([]);
@@ -382,42 +374,79 @@ export default function FinanceOS(){
   const [ready,setReady]=useState(false);
 
   useEffect(()=>{
-    setTxs(LS.get("fos2:txs",[]));
-    setMonthly(LS.get("fos2:monthly",[]));
-    setDebts(LS.get("fos2:debts",[]));
-    setSettings(LS.get("fos2:settings",{currency:"USD",name:""}));
-    setReady(true);
-  },[]);
-  useEffect(()=>{if(ready)LS.set("fos2:txs",txs);},[txs,ready]);
-  useEffect(()=>{if(ready)LS.set("fos2:monthly",monthly);},[monthly,ready]);
-  useEffect(()=>{if(ready)LS.set("fos2:debts",debts);},[debts,ready]);
-  useEffect(()=>{if(ready)LS.set("fos2:settings",settings);},[settings,ready]);
+    let cancelled=false;
+    (async()=>{
+      try{
+        const data=await db.fetchAll(userId);
+        if(cancelled)return;
+        setTxs(data.txs);setMonthly(data.monthly);setDebts(data.debts);setSettings(data.settings);
+      }catch(err){
+        console.error(err);
+        window.alert("Couldn't load your data. Please refresh the page.");
+      }finally{
+        if(!cancelled)setReady(true);
+      }
+    })();
+    return ()=>{cancelled=true;};
+  },[userId]);
 
   const S=sym(settings.currency);
 
   // Mutations
-  const addTx=useCallback((t:Tx)=>{
-    setTxs(p=>[t,...p]);
-    if(t.type==="personal_out"&&t.payment==="credit"&&t.card){
-      setDebts(p=>{
-        const idx=p.findIndex(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===t.card!.toLowerCase());
-        if(idx>=0){
-          const next=[...p];
-          next[idx]={...next[idx],totalAmount:next[idx].totalAmount+t.amount};
-          return next;
+  const addTx=useCallback(async(t:Tx)=>{
+    try{
+      const saved=await db.insertTx(userId,{type:t.type,amount:t.amount,description:t.description,category:t.category,date:t.date,notes:t.notes,currency:t.currency,myShare:t.myShare,payment:t.payment,card:t.card});
+      setTxs(p=>[saved,...p]);
+      if(saved.type==="personal_out"&&saved.payment==="credit"&&saved.card){
+        const existing=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===saved.card!.toLowerCase());
+        if(existing){
+          const newTotal=existing.totalAmount+saved.amount;
+          await db.setDebtTotal(existing.id,newTotal);
+          setDebts(p=>p.map(d=>d.id===existing.id?{...d,totalAmount:newTotal}:d));
+        }else{
+          const newDebt=await db.insertDebt(userId,{personBank:saved.card,totalAmount:saved.amount,currency:saved.currency,description:"Credit Card Spending"});
+          setDebts(p=>[newDebt,...p]);
         }
-        return [{id:uid(),personBank:t.card!,totalAmount:t.amount,currency:t.currency,description:"Credit Card Spending",payments:[],createdAt:new Date().toISOString()},...p];
-      });
-    }
+      }
+    }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
+  },[userId,debts]);
+  const delTx=useCallback((id:string)=>{
+    setTxs(p=>p.filter(t=>t.id!==id));
+    db.deleteTx(id).catch(err=>console.error(err));
   },[]);
-  const delTx=useCallback((id:string)=>setTxs(p=>p.filter(t=>t.id!==id)),[]);
-  const addMonthly=useCallback((m:Monthly)=>setMonthly(p=>[m,...p]),[]);
-  const delMonthly=useCallback((id:string)=>setMonthly(p=>p.filter(m=>m.id!==id)),[]);
-  const toggleMonthly=useCallback((id:string)=>setMonthly(p=>p.map(m=>m.id===id?{...m,active:!m.active}:m)),[]);
-  const addDebt=useCallback((d:Debt)=>setDebts(p=>[d,...p]),[]);
-  const delDebt=useCallback((id:string)=>setDebts(p=>p.filter(d=>d.id!==id)),[]);
-  const payDebt=useCallback((id:string,amount:number,note:string,date:string)=>
-    setDebts(p=>p.map(d=>d.id===id?{...d,payments:[...d.payments,{id:uid(),date,amount,note}]}:d)),[]);
+  const addMonthly=useCallback(async(m:Monthly)=>{
+    try{
+      const saved=await db.insertMonthly(userId,{scope:m.scope,name:m.name,amount:m.amount,currency:m.currency,dueDay:m.dueDay,category:m.category,notes:m.notes,active:m.active});
+      setMonthly(p=>[saved,...p]);
+    }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
+  },[userId]);
+  const delMonthly=useCallback((id:string)=>{
+    setMonthly(p=>p.filter(m=>m.id!==id));
+    db.deleteMonthly(id).catch(err=>console.error(err));
+  },[]);
+  const toggleMonthly=useCallback((id:string)=>{
+    setMonthly(p=>{
+      const target=p.find(m=>m.id===id);
+      if(target)db.setMonthlyActive(id,!target.active).catch(err=>console.error(err));
+      return p.map(m=>m.id===id?{...m,active:!m.active}:m);
+    });
+  },[]);
+  const addDebt=useCallback(async(d:Debt)=>{
+    try{
+      const saved=await db.insertDebt(userId,{personBank:d.personBank,totalAmount:d.totalAmount,currency:d.currency,description:d.description,dueDate:d.dueDate,notes:d.notes});
+      setDebts(p=>[saved,...p]);
+    }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
+  },[userId]);
+  const delDebt=useCallback((id:string)=>{
+    setDebts(p=>p.filter(d=>d.id!==id));
+    db.deleteDebt(id).catch(err=>console.error(err));
+  },[]);
+  const payDebt=useCallback(async(id:string,amount:number,note:string,date:string)=>{
+    try{
+      const payment=await db.insertDebtPayment(userId,id,amount,note,date);
+      setDebts(p=>p.map(d=>d.id===id?{...d,payments:[...d.payments,payment]}:d));
+    }catch(err){console.error(err);window.alert("Couldn't save that payment. Please try again.");}
+  },[userId]);
 
   // ── Derived numbers
   const compIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+t.amount,0);
@@ -810,7 +839,40 @@ export default function FinanceOS(){
     const [name,setName]=useState(settings.name);
     const [cur,setCur]=useState(settings.currency);
     const [saved,setSaved]=useState(false);
-    const save=()=>{setSettings({currency:cur,name});setSaved(true);setTimeout(()=>setSaved(false),2500);};
+    const [newPw,setNewPw]=useState("");
+    const [pwBusy,setPwBusy]=useState(false);
+    const [pwMsg,setPwMsg]=useState<{ok:boolean;text:string}|null>(null);
+    const save=async()=>{
+      const next={currency:cur,name};
+      setSettings(next);
+      setSaved(true);setTimeout(()=>setSaved(false),2500);
+      try{await db.upsertSettings(userId,next);}catch(err){console.error(err);window.alert("Couldn't save settings. Please try again.");}
+    };
+    const changePassword=async()=>{
+      if(newPw.length<6){setPwMsg({ok:false,text:"Password must be at least 6 characters."});return;}
+      setPwBusy(true);setPwMsg(null);
+      try{
+        const {error}=await supabase.auth.updateUser({password:newPw});
+        if(error)throw error;
+        setPwMsg({ok:true,text:"Password updated."});
+        setNewPw("");
+      }catch(err){
+        setPwMsg({ok:false,text:err instanceof Error?err.message:"Couldn't update password."});
+      }finally{
+        setPwBusy(false);
+      }
+    };
+    const clearAllData=async()=>{
+      if(!window.confirm("Delete ALL data? This cannot be undone."))return;
+      try{
+        await Promise.all([
+          ...txs.map(t=>db.deleteTx(t.id)),
+          ...monthly.map(m=>db.deleteMonthly(m.id)),
+          ...debts.map(d=>db.deleteDebt(d.id)),
+        ]);
+        setTxs([]);setMonthly([]);setDebts([]);
+      }catch(err){console.error(err);window.alert("Couldn't delete everything. Please try again.");}
+    };
     return(
       <div style={{padding:"22px 16px",display:"flex",flexDirection:"column",gap:20}}>
         <div>
@@ -837,12 +899,21 @@ export default function FinanceOS(){
               <span style={{fontSize:14,fontWeight:700,color:D.t1}}>{row.v}</span>
             </div>
           ))}
-          <button onClick={()=>{if(window.confirm("Delete ALL data? This cannot be undone."))setTxs([]);setMonthly([]);setDebts([]);}}
+          <button onClick={clearAllData}
             style={{width:"100%",padding:"13px",background:D.roseDim,border:`1px solid ${D.rose}44`,borderRadius:14,color:D.rose,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:16,fontFamily:"inherit"}}>
             Clear All Data
           </button>
         </div>
-        <div style={{textAlign:"center" as const,fontSize:12,color:D.t3,paddingBottom:12}}>Finance OS · All data stored on your device</div>
+        <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20,display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:11,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const}}>Change Password</div>
+          <Inp label="New Password" type="password" val={newPw} onChange={setNewPw} placeholder="At least 6 characters"/>
+          {pwMsg&&<div style={{fontSize:13,color:pwMsg.ok?D.teal:D.rose,background:pwMsg.ok?D.tealDim:D.roseDim,border:`1px solid ${pwMsg.ok?D.teal:D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{pwMsg.text}</div>}
+          <GhostBtn label={pwBusy?"Updating…":"Update Password"} onClick={changePassword}/>
+        </div>
+        <button onClick={onSignOut} style={{width:"100%",padding:"15px",background:"transparent",border:`1px solid ${D.b1}`,borderRadius:12,color:D.t2,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          Sign Out
+        </button>
+        <div style={{textAlign:"center" as const,fontSize:12,color:D.t3,paddingBottom:12}}>Finance OS · Synced to your account</div>
       </div>
     );
   };
@@ -916,4 +987,60 @@ export default function FinanceOS(){
       )}
     </div>
   );
+}
+
+// ── AUTH ───────────────────────────────────────────────────────────────────────
+const LoginScreen=()=>{
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  const ok=!!email&&!!password;
+
+  const submit=async()=>{
+    if(!ok||busy)return;
+    setBusy(true);setError("");
+    try{
+      const {error}=await supabase.auth.signInWithPassword({email,password});
+      if(error)throw error;
+    }catch(err){
+      setError(err instanceof Error?err.message:"Something went wrong. Please try again.");
+    }finally{
+      setBusy(false);
+    }
+  };
+
+  return(
+    <div className={font.className} style={{background:D.bg,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,color:D.t1}}>
+      <div style={{width:"100%",maxWidth:360}}>
+        <div style={{textAlign:"center" as const,marginBottom:32}}>
+          <div style={{width:56,height:56,borderRadius:16,background:D.indigo,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+            <G d={IC.trend} s={26} c="#fff"/>
+          </div>
+          <div style={{fontSize:22,fontWeight:800,letterSpacing:"-0.02em"}}>Finance OS</div>
+          <div style={{fontSize:13,color:D.t2,marginTop:4}}>Sign in to your account</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <Inp label="Email" type="email" val={email} onChange={setEmail} placeholder="you@example.com" autoFocus/>
+          <Inp label="Password" type="password" val={password} onChange={setPassword} placeholder="Your password"/>
+          {error&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{error}</div>}
+          <PrimaryBtn label={busy?"Please wait…":"Sign In"} onClick={submit} disabled={!ok||busy}/>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default function Page(){
+  const [session,setSession]=useState<Session|null|undefined>(undefined);
+
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data})=>setSession(data.session));
+    const {data:listener}=supabase.auth.onAuthStateChange((_event,sess)=>setSession(sess));
+    return ()=>listener.subscription.unsubscribe();
+  },[]);
+
+  if(session===undefined)return<div style={{background:D.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{color:D.t2}}>Loading…</div></div>;
+  if(!session)return<LoginScreen/>;
+  return<FinanceApp userId={session.user.id} onSignOut={()=>supabase.auth.signOut()}/>;
 }
