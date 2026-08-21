@@ -1,16 +1,16 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Space_Grotesk } from "next/font/google";
+import { Inter } from "next/font/google";
 
-const font = Space_Grotesk({ subsets: ["latin"], display: "swap", weight: ["400","500","600","700","800"] });
+const font = Inter({ subsets: ["latin"], display: "swap", weight: ["400","500","600","700"] });
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 type TxType = "company_in" | "company_out" | "personal_in" | "personal_out";
-interface Tx { id:string; type:TxType; amount:number; description:string; category:string; date:string; notes?:string; currency:string; createdAt:string; }
+interface Tx { id:string; type:TxType; amount:number; description:string; category:string; date:string; notes?:string; currency:string; createdAt:string; myShare?:number; payment?:"cash"|"debit"|"credit"; card?:string; }
 interface Monthly { id:string; scope:"personal"|"company"; name:string; amount:number; currency:string; dueDay:number; category:string; notes?:string; active:boolean; createdAt:string; }
 interface DebtPayment { id:string; date:string; amount:number; note?:string; }
 interface Debt { id:string; personBank:string; totalAmount:number; currency:string; description:string; dueDate?:string; notes?:string; payments:DebtPayment[]; createdAt:string; }
-interface Settings { companyPercentage:number; currency:string; name:string; }
+interface Settings { currency:string; name:string; }
 
 // ── CONSTANTS ──────────────────────────────────────────────────────────────────
 const CURRENCIES = [
@@ -78,6 +78,7 @@ const IC={
   clock:"M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2",
   warn:"M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01",
   trend:"M23 6l-9.5 9.5-5-5L1 18",
+  card:["M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z","M2 10h20"],
 };
 
 // ── SHARED UI ──────────────────────────────────────────────────────────────────
@@ -93,6 +94,16 @@ const Badge=({label,color}:{label:string;color:string})=>(
 
 const Lbl=({children}:{children:string})=>(
   <div style={{fontSize:11,fontWeight:700,color:D.t2,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:8}}>{children}</div>
+);
+
+const EmptyState=({icon,title,sub,color}:{icon:string|string[];title:string;sub:string;color:string})=>(
+  <div style={{padding:"48px 20px",textAlign:"center" as const}}>
+    <div style={{width:52,height:52,borderRadius:16,background:color+"14",border:`1px solid ${color}33`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+      <G d={icon} s={22} c={color}/>
+    </div>
+    <div style={{fontSize:16,fontWeight:700,color:D.t1,marginBottom:6}}>{title}</div>
+    <div style={{fontSize:13,color:D.t2}}>{sub}</div>
+  </div>
 );
 
 // ── BOTTOM SHEET ───────────────────────────────────────────────────────────────
@@ -120,10 +131,10 @@ const Sheet=({open,onClose,title,children,tall}:{open:boolean;onClose:()=>void;t
 };
 
 // ── FORM FIELDS ────────────────────────────────────────────────────────────────
-const Inp=({label,type="text",val,onChange,placeholder,min,max}:{label:string;type?:string;val:string;onChange:(v:string)=>void;placeholder?:string;min?:string;max?:string})=>(
+const Inp=({label,type="text",val,onChange,placeholder,min,max,autoFocus}:{label:string;type?:string;val:string;onChange:(v:string)=>void;placeholder?:string;min?:string;max?:string;autoFocus?:boolean})=>(
   <div>
     <Lbl>{label}</Lbl>
-    <input type={type} value={val} onChange={e=>onChange(e.target.value)} placeholder={placeholder} min={min} max={max}
+    <input type={type} value={val} onChange={e=>onChange(e.target.value)} placeholder={placeholder} min={min} max={max} autoFocus={autoFocus}
       style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,padding:"14px 16px",color:D.t1,fontSize:15,fontWeight:500,outline:"none",fontFamily:"inherit",transition:"border-color .2s"}}
       onFocus={e=>{e.target.style.borderColor=D.indigo;e.target.style.boxShadow=`0 0 0 3px ${D.indigoDim}`;}}
       onBlur={e=>{e.target.style.borderColor=D.b1;e.target.style.boxShadow="none";}}
@@ -155,7 +166,7 @@ const PrimaryBtn=({label,onClick,color,disabled,icon}:{label:string;onClick:()=>
   const c=color||D.indigo;
   return(
     <button onClick={onClick} disabled={disabled}
-      style={{width:"100%",padding:"16px",background:disabled?D.s3:c,backgroundImage:disabled?"none":`linear-gradient(135deg, ${c}, ${c}cc)`,border:disabled?`1px solid ${D.b1}`:"none",borderRadius:16,color:disabled?D.t3:"#fff",fontSize:15,fontWeight:800,cursor:disabled?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,letterSpacing:"0.02em",boxShadow:disabled?"none":`0 4px 20px ${c}44`,transition:"all .2s",fontFamily:"inherit"}}>
+      style={{width:"100%",padding:"15px",background:disabled?D.s3:c,border:disabled?`1px solid ${D.b1}`:"none",borderRadius:12,color:disabled?D.t3:"#fff",fontSize:15,fontWeight:700,cursor:disabled?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"opacity .15s",fontFamily:"inherit"}}>
       {icon&&<G d={icon} s={17} c={disabled?D.t3:"#fff"}/>}{label}
     </button>
   );
@@ -170,9 +181,26 @@ const GhostBtn=({label,onClick,color}:{label:string;onClick:()=>void;color?:stri
   );
 };
 
+const Chip=({label,active,onClick,color}:{label:string;active:boolean;onClick:()=>void;color:string})=>(
+  <button type="button" onClick={onClick}
+    style={{padding:"10px 14px",borderRadius:10,background:active?color+"22":D.s3,border:`1px solid ${active?color:D.b1}`,color:active?color:D.t2,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap" as const}}>
+    {label}
+  </button>
+);
+
+const ChipGroup=({label,val,onChange,opts,color}:{label:string;val:string;onChange:(v:string)=>void;opts:string[];color:string})=>(
+  <div>
+    <Lbl>{label}</Lbl>
+    <div style={{display:"flex",flexWrap:"wrap" as const,gap:8}}>
+      {opts.map(o=><Chip key={o} label={o} active={val===o} onClick={()=>onChange(o)} color={color}/>)}
+    </div>
+  </div>
+);
+
 // ── TRANSACTION ROW ────────────────────────────────────────────────────────────
 const TxRow=({tx,onDel}:{tx:Tx;onDel:()=>void})=>{
   const isIn=tx.type==="company_in"||tx.type==="personal_in";
+  const isCompany=tx.type==="company_in"||tx.type==="company_out";
   const c=isIn?D.teal:D.rose;
   return(
     <div style={{display:"flex",alignItems:"center",padding:"15px 0",borderBottom:`1px solid ${D.b0}`,gap:14}}>
@@ -185,6 +213,14 @@ const TxRow=({tx,onDel}:{tx:Tx;onDel:()=>void})=>{
           <span style={{fontSize:11,color:D.t2}}>{tx.category}</span>
           <span style={{fontSize:11,color:D.b2}}>·</span>
           <span style={{fontSize:11,color:D.t3}}>{tx.date}</span>
+          {tx.payment==="credit"&&(
+            <span style={{display:"flex",alignItems:"center",gap:3,fontSize:11,color:D.amber}}>
+              <span style={{color:D.b2}}>·</span><G d={IC.card} s={11} c={D.amber}/>{tx.card}
+            </span>
+          )}
+          {isCompany&&!!tx.myShare&&(
+            <span style={{fontSize:11,color:D.amber}}>· {money(tx.myShare,sym(tx.currency))} yours</span>
+          )}
         </div>
       </div>
       <div style={{flexShrink:0,textAlign:"right" as const}}>
@@ -224,37 +260,81 @@ const MonthlyRow=({m,onDel,onToggle}:{m:Monthly;onDel:()=>void;onToggle:()=>void
 };
 
 // ── ADD FORMS ──────────────────────────────────────────────────────────────────
+const PAID_WITH:{v:"cash"|"debit"|"credit";l:string}[]=[{v:"cash",l:"Cash"},{v:"debit",l:"Debit Card"},{v:"credit",l:"Credit Card"}];
+
 const AddTxForm=({type,onAdd,onClose,defCur}:{type:TxType;onAdd:(t:Tx)=>void;onClose:()=>void;defCur:string})=>{
   const [amt,setAmt]=useState("");const [desc,setDesc]=useState("");const [cat,setCat]=useState("");
   const [date,setDate]=useState(today());const [notes,setNotes]=useState("");const [cur,setCur]=useState(defCur);
+  const [myShare,setMyShare]=useState("");
+  const [payment,setPayment]=useState<"cash"|"debit"|"credit">("debit");
+  const [card,setCard]=useState("");
+  const [more,setMore]=useState(false);
   const isIn=type==="company_in"||type==="personal_in";
+  const isCompany=type==="company_in"||type==="company_out";
   const cats=type==="company_in"?COMPANY_IN_CATS:type==="company_out"?COMPANY_OUT_CATS:type==="personal_in"?PERSONAL_IN_CATS:PERSONAL_OUT_CATS;
-  const c=isIn?D.teal:D.rose;const ok=!!amt&&!!desc&&!!cat;
-  const handle=()=>{if(!ok)return;onAdd({id:uid(),type,amount:parseFloat(amt),description:desc,category:cat,date,notes,currency:cur,createdAt:new Date().toISOString()});onClose();};
+  const c=isIn?D.teal:D.rose;
+  const needsCard=type==="personal_out"&&payment==="credit";
+  const ok=!!amt&&!!cat&&(!needsCard||!!card);
+  const handle=()=>{
+    if(!ok)return;
+    const tx:Tx={id:uid(),type,amount:parseFloat(amt),description:desc||cat,category:cat,date,notes,currency:cur,createdAt:new Date().toISOString()};
+    if(isCompany&&myShare)tx.myShare=parseFloat(myShare)||0;
+    if(type==="personal_out"){tx.payment=payment;if(payment==="credit")tx.card=card;}
+    onAdd(tx);onClose();
+  };
   return(<>
-    <Inp label="Amount" type="number" val={amt} onChange={setAmt} placeholder={`${sym(cur)} 0.00`}/>
-    <Inp label="Description" val={desc} onChange={setDesc} placeholder="What is this for?"/>
-    <Sel label="Category" val={cat} onChange={setCat} opts={cats.map(c=>({v:c,l:c}))}/>
-    <Inp label="Date" type="date" val={date} onChange={setDate}/>
+    <Inp label="Amount" type="number" val={amt} onChange={setAmt} placeholder={`${sym(cur)} 0.00`} autoFocus/>
+    <ChipGroup label="Category" val={cat} onChange={setCat} opts={cats} color={c}/>
+    {isCompany&&(
+      <Inp label={type==="company_in"?"How much of this is yours? (optional)":"How much are you personally paying? (optional)"} type="number" val={myShare} onChange={setMyShare} placeholder={`${sym(cur)} 0.00`}/>
+    )}
+    {type==="personal_out"&&(
+      <div>
+        <Lbl>Paid With</Lbl>
+        <div style={{display:"flex",flexWrap:"wrap" as const,gap:8}}>
+          {PAID_WITH.map(p=><Chip key={p.v} label={p.l} active={payment===p.v} color={c} onClick={()=>setPayment(p.v)}/>)}
+        </div>
+      </div>
+    )}
+    {needsCard&&<Inp label="Which card / bank?" val={card} onChange={setCard} placeholder="e.g. CIB Visa, Chase Sapphire…"/>}
+    <Inp label="Description (optional)" val={desc} onChange={setDesc} placeholder={cat||"What is this for?"}/>
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
-    <Inp label="Notes (optional)" val={notes} onChange={setNotes} placeholder="Add any note…"/>
+    {!more
+      ?<button type="button" onClick={()=>setMore(true)} style={{background:"none",border:"none",color:D.t2,fontSize:13,fontWeight:600,cursor:"pointer",textAlign:"left" as const,padding:"2px 0",fontFamily:"inherit"}}>+ Date &amp; notes</button>
+      :<>
+        <Inp label="Date" type="date" val={date} onChange={setDate}/>
+        <Inp label="Notes (optional)" val={notes} onChange={setNotes} placeholder="Add any note…"/>
+      </>}
     <PrimaryBtn label={isIn?"Add Income":"Add Expense"} onClick={handle} color={c} disabled={!ok}/>
   </>);
 };
+
+const SUBSCRIPTION_PRESETS = ["Netflix","Spotify","YouTube Premium","iCloud+","Amazon Prime","Disney+","Gym Membership","Internet & Phone"];
 
 const AddMonthlyForm=({scope,onAdd,onClose,defCur}:{scope:"personal"|"company";onAdd:(m:Monthly)=>void;onClose:()=>void;defCur:string})=>{
   const [name,setName]=useState("");const [amt,setAmt]=useState("");const [cat,setCat]=useState("");
   const [day,setDay]=useState("1");const [cur,setCur]=useState(defCur);const [notes,setNotes]=useState("");
   const cats=scope==="company"?COMPANY_M_CATS:PERSONAL_M_CATS;const ok=!!name&&!!amt&&!!cat;
+  const col=scope==="company"?D.amber:D.violet;
   const handle=()=>{if(!ok)return;onAdd({id:uid(),scope,name,amount:parseFloat(amt),currency:cur,dueDay:parseInt(day)||1,category:cat,notes,active:true,createdAt:new Date().toISOString()});onClose();};
   return(<>
-    <Inp label="Expense Name" val={name} onChange={setName} placeholder="e.g. Office Rent, Family Support…"/>
+    {scope==="personal"&&(
+      <div>
+        <Lbl>Quick Add — Subscribed To</Lbl>
+        <div style={{display:"flex",flexWrap:"wrap" as const,gap:8}}>
+          {SUBSCRIPTION_PRESETS.map(p=>(
+            <Chip key={p} label={p} active={name===p} color={col} onClick={()=>{setName(p);setCat("Subscription");}}/>
+          ))}
+        </div>
+      </div>
+    )}
+    <Inp label="Expense Name" val={name} onChange={setName} placeholder="e.g. Netflix, Rent, Family Support…"/>
     <Inp label="Amount" type="number" val={amt} onChange={setAmt} placeholder={`${sym(cur)} 0.00`}/>
-    <Sel label="Category" val={cat} onChange={setCat} opts={cats.map(c=>({v:c,l:c}))}/>
+    <ChipGroup label="Category" val={cat} onChange={setCat} opts={cats} color={col}/>
     <Inp label="Due Day of Month (1–31)" type="number" val={day} onChange={setDay} min="1" max="31"/>
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     <Inp label="Notes (optional)" val={notes} onChange={setNotes} placeholder="e.g. for the house on Al-Thawra street…"/>
-    <PrimaryBtn label="Add Monthly Expense" onClick={handle} color={scope==="company"?D.amber:D.violet} disabled={!ok}/>
+    <PrimaryBtn label="Add Monthly Expense" onClick={handle} color={col} disabled={!ok}/>
   </>);
 };
 
@@ -297,7 +377,7 @@ export default function FinanceOS(){
   const [txs,setTxs]=useState<Tx[]>([]);
   const [monthly,setMonthly]=useState<Monthly[]>([]);
   const [debts,setDebts]=useState<Debt[]>([]);
-  const [settings,setSettings]=useState<Settings>({companyPercentage:30,currency:"USD",name:""});
+  const [settings,setSettings]=useState<Settings>({currency:"USD",name:""});
   const [sheet,setSheet]=useState<{open:boolean;key:string;debt?:Debt}>({open:false,key:""});
   const [ready,setReady]=useState(false);
 
@@ -305,7 +385,7 @@ export default function FinanceOS(){
     setTxs(LS.get("fos2:txs",[]));
     setMonthly(LS.get("fos2:monthly",[]));
     setDebts(LS.get("fos2:debts",[]));
-    setSettings(LS.get("fos2:settings",{companyPercentage:30,currency:"USD",name:""}));
+    setSettings(LS.get("fos2:settings",{currency:"USD",name:""}));
     setReady(true);
   },[]);
   useEffect(()=>{if(ready)LS.set("fos2:txs",txs);},[txs,ready]);
@@ -316,7 +396,20 @@ export default function FinanceOS(){
   const S=sym(settings.currency);
 
   // Mutations
-  const addTx=useCallback((t:Tx)=>setTxs(p=>[t,...p]),[]);
+  const addTx=useCallback((t:Tx)=>{
+    setTxs(p=>[t,...p]);
+    if(t.type==="personal_out"&&t.payment==="credit"&&t.card){
+      setDebts(p=>{
+        const idx=p.findIndex(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===t.card!.toLowerCase());
+        if(idx>=0){
+          const next=[...p];
+          next[idx]={...next[idx],totalAmount:next[idx].totalAmount+t.amount};
+          return next;
+        }
+        return [{id:uid(),personBank:t.card!,totalAmount:t.amount,currency:t.currency,description:"Credit Card Spending",payments:[],createdAt:new Date().toISOString()},...p];
+      });
+    }
+  },[]);
   const delTx=useCallback((id:string)=>setTxs(p=>p.filter(t=>t.id!==id)),[]);
   const addMonthly=useCallback((m:Monthly)=>setMonthly(p=>[m,...p]),[]);
   const delMonthly=useCallback((id:string)=>setMonthly(p=>p.filter(m=>m.id!==id)),[]);
@@ -332,9 +425,11 @@ export default function FinanceOS(){
   const compMonthlyActive=monthly.filter(m=>m.scope==="company"&&m.active);
   const compMonthlyTotal=compMonthlyActive.reduce((s,m)=>s+m.amount,0);
   const compProfit=compIn-compOut;
-  const myCut=(compIn*settings.companyPercentage)/100;
+  const myCutIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+(t.myShare||0),0);
+  const myCutOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+(t.myShare||0),0);
+  const myCut=myCutIn-myCutOut;
   const perIn=txs.filter(t=>t.type==="personal_in").reduce((s,t)=>s+t.amount,0);
-  const perOut=txs.filter(t=>t.type==="personal_out").reduce((s,t)=>s+t.amount,0);
+  const perOut=txs.filter(t=>t.type==="personal_out"&&t.payment!=="credit").reduce((s,t)=>s+t.amount,0);
   const perMonthly=monthly.filter(m=>m.scope==="personal"&&m.active);
   const perMonthlyTotal=perMonthly.reduce((s,m)=>s+m.amount,0);
   const debtRemaining=(d:Debt)=>d.totalAmount-d.payments.reduce((s,p)=>s+p.amount,0);
@@ -348,7 +443,8 @@ export default function FinanceOS(){
   const mTxs=txs.filter(t=>{const d=new Date(t.date);return d.getMonth()===cm&&d.getFullYear()===cy;});
   const mCompIn=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+t.amount,0);
   const mCompOut=mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+t.amount,0);
-  const mPerOut=mTxs.filter(t=>t.type==="personal_out").reduce((s,t)=>s+t.amount,0);
+  const mMyCut=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+(t.myShare||0),0)-mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+(t.myShare||0),0);
+  const mPerOut=mTxs.filter(t=>t.type==="personal_out"&&t.payment!=="credit").reduce((s,t)=>s+t.amount,0);
 
   const openSheet=(key:string,debt?:Debt)=>setSheet({open:true,key,debt});
   const closeSheet=()=>setSheet({open:false,key:""});
@@ -384,7 +480,7 @@ export default function FinanceOS(){
           <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:"18px 16px"}}>
             <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:10}}>Company Revenue</div>
             <div style={{fontSize:24,fontWeight:900,color:D.teal,fontVariantNumeric:"tabular-nums",marginBottom:6}}>{money(mCompIn,S,true)}</div>
-            <div style={{fontSize:11,color:D.amber}}>My cut: {money(mCompIn*settings.companyPercentage/100,S,true)}</div>
+            <div style={{fontSize:11,color:D.amber}}>My cut: {money(mMyCut,S,true)}</div>
           </div>
           <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:"18px 16px"}}>
             <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:10}}>Company Expenses</div>
@@ -400,7 +496,7 @@ export default function FinanceOS(){
             {l:"Total Revenue In",v:compIn,c:D.teal},
             {l:"Total Expenses Out",v:compOut,c:D.rose},
             {l:"Company Net Profit",v:compProfit,c:compProfit>=0?D.teal:D.rose},
-            {l:`My ${settings.companyPercentage}% Cut`,v:myCut,c:D.amber},
+            {l:"My Cut",v:myCut,c:D.amber},
             {l:"Monthly Fixed Costs",v:compMonthlyTotal,c:D.amber,sub:"/mo"},
           ].map((row,i)=>(
             <div key={row.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:i<4?`1px solid ${D.b0}`:"none"}}>
@@ -430,11 +526,7 @@ export default function FinanceOS(){
         <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,overflow:"hidden"}}>
           {txs.length>0
             ?<div style={{padding:"0 18px"}}>{txs.slice(0,6).map(tx=><TxRow key={tx.id} tx={tx} onDel={()=>delTx(tx.id)}/>)}</div>
-            :<div style={{padding:"52px 20px",textAlign:"center" as const}}>
-              <div style={{fontSize:40,marginBottom:14}}>📊</div>
-              <div style={{fontSize:16,fontWeight:700,color:D.t1,marginBottom:6}}>No transactions yet</div>
-              <div style={{fontSize:13,color:D.t2}}>Start by adding company revenue or a personal expense.</div>
-            </div>}
+            :<EmptyState icon={IC.trend} color={D.indigo} title="No transactions yet" sub="Start by adding company revenue or a personal expense."/>}
         </div>
 
         {/* Quick add */}
@@ -464,7 +556,7 @@ export default function FinanceOS(){
 
         {/* 3 stat cards */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          {[{l:"Revenue",v:compIn,c:D.teal},{l:"Expenses",v:compOut,c:D.rose},{l:`My ${settings.companyPercentage}%`,v:myCut,c:D.amber}].map(s=>(
+          {[{l:"Revenue",v:compIn,c:D.teal},{l:"Expenses",v:compOut,c:D.rose},{l:"My Cut",v:myCut,c:D.amber}].map(s=>(
             <div key={s.l} style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:16,padding:"14px 12px",textAlign:"center" as const}}>
               <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase" as const,marginBottom:8}}>{s.l}</div>
               <div style={{fontSize:15,fontWeight:900,color:s.c,fontVariantNumeric:"tabular-nums"}}>{money(s.v,S,true)}</div>
@@ -564,8 +656,8 @@ export default function FinanceOS(){
         {/* My company cut */}
         <div style={{background:D.amberDim,border:`1px solid ${D.amber}33`,borderRadius:16,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
-            <div style={{fontSize:11,color:D.amber,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:4}}>Company Cut ({settings.companyPercentage}%)</div>
-            <div style={{fontSize:12,color:D.t2}}>From {money(compIn,S,true)} total revenue</div>
+            <div style={{fontSize:11,color:D.amber,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:4}}>Company Cut</div>
+            <div style={{fontSize:12,color:D.t2}}>Your share of income, minus what you covered</div>
           </div>
           <div style={{fontSize:22,fontWeight:900,color:D.amber,fontVariantNumeric:"tabular-nums"}}>{money(myCut,S,true)}</div>
         </div>
@@ -663,7 +755,7 @@ export default function FinanceOS(){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
                 <div style={{flex:1,marginRight:12}}>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                    <div style={{width:36,height:36,borderRadius:11,background:D.blueDim||D.indigoDim,border:`1px solid ${D.indigo}33`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <div style={{width:36,height:36,borderRadius:11,background:D.indigoDim,border:`1px solid ${D.indigo}33`,display:"flex",alignItems:"center",justifyContent:"center"}}>
                       <G d={IC.bank} s={16} c={D.indigo}/>
                     </div>
                     <div>
@@ -701,30 +793,24 @@ export default function FinanceOS(){
                 ?<button onClick={()=>openSheet("pay_debt",debt)} style={{width:"100%",padding:"13px",background:D.tealDim,border:`1px solid ${D.teal}44`,borderRadius:14,color:D.teal,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
                   Record Payment
                 </button>
-                :<div style={{textAlign:"center" as const,padding:"10px",background:D.tealDim,borderRadius:14,fontSize:14,fontWeight:800,color:D.teal}}>✓ Fully Paid Off</div>}
+                :<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:7,padding:"10px",background:D.tealDim,borderRadius:14,fontSize:14,fontWeight:800,color:D.teal}}><G d={IC.check} s={15} c={D.teal}/>Fully Paid Off</div>}
             </div>
           </div>
         );
       })}
 
       {debts.length===0&&(
-        <div style={{padding:"60px 20px",textAlign:"center" as const}}>
-          <div style={{fontSize:52,marginBottom:16}}>🎉</div>
-          <div style={{fontSize:17,fontWeight:800,color:D.t1,marginBottom:8}}>No debts recorded</div>
-          <div style={{fontSize:13,color:D.t2}}>Track loans, bank debts, or money you owe to friends (دين لصديق)</div>
-        </div>
+        <EmptyState icon={IC.bank} color={D.rose} title="No debts recorded" sub="Track loans, bank debts, or money you owe to friends."/>
       )}
     </div>
   );
 
   // ── SETTINGS ───────────────────────────────────────────────────
   const SettingsTab=()=>{
-    const [pct,setPct]=useState(settings.companyPercentage.toString());
     const [name,setName]=useState(settings.name);
     const [cur,setCur]=useState(settings.currency);
     const [saved,setSaved]=useState(false);
-    const save=()=>{setSettings({companyPercentage:parseFloat(pct)||0,currency:cur,name});setSaved(true);setTimeout(()=>setSaved(false),2500);};
-    const preview=money((compIn*(parseFloat(pct)||0))/100,sym(cur));
+    const save=()=>{setSettings({currency:cur,name});setSaved(true);setTimeout(()=>setSaved(false),2500);};
     return(
       <div style={{padding:"22px 16px",display:"flex",flexDirection:"column",gap:20}}>
         <div>
@@ -734,17 +820,13 @@ export default function FinanceOS(){
         <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20,display:"flex",flexDirection:"column",gap:16}}>
           <Inp label="Your Name" val={name} onChange={setName} placeholder="Ahmad"/>
           <Sel label="Default Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
-          <div>
-            <Inp label="Your Company Percentage (%)" type="number" val={pct} onChange={setPct} placeholder="30"/>
-            <div style={{marginTop:12,padding:"14px 16px",background:D.amberDim,border:`1px solid ${D.amber}33`,borderRadius:14}}>
-              <div style={{fontSize:13,color:D.amber,lineHeight:1.6}}>
-                You earn <strong>{pct||0}%</strong> of company revenue.<br/>
-                Based on {money(compIn,S,true)} total revenue = <strong>{preview}</strong> your cut.
-              </div>
+          <div style={{padding:"14px 16px",background:D.amberDim,border:`1px solid ${D.amber}33`,borderRadius:14}}>
+            <div style={{fontSize:13,color:D.amber,lineHeight:1.6}}>
+              Your Company Cut is no longer a fixed %. Set how much of each transaction is yours right when you add company income or an expense you covered.
             </div>
           </div>
         </div>
-        <button onClick={save} style={{padding:"16px",background:saved?D.tealDim:D.indigo,backgroundImage:saved?"none":`linear-gradient(135deg, ${D.indigo}, ${D.violet})`,border:saved?`1px solid ${D.teal}`:"none",borderRadius:16,color:saved?D.teal:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,boxShadow:saved?"none":`0 4px 20px ${D.indigo}44`,transition:"all .25s",fontFamily:"inherit"}}>
+        <button onClick={save} style={{padding:"15px",background:saved?D.tealDim:D.indigo,border:saved?`1px solid ${D.teal}`:"none",borderRadius:12,color:saved?D.teal:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"opacity .15s",fontFamily:"inherit"}}>
           {saved?<><G d={IC.check} s={16} c={D.teal}/>Saved!</>:"Save Settings"}
         </button>
         <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20}}>
@@ -804,6 +886,14 @@ export default function FinanceOS(){
         {tab==="debts"&&<DebtsTab/>}
         {tab==="settings"&&<SettingsTab/>}
       </div>
+
+      {/* Quick add — daily expense, reachable from any tab */}
+      {tab!=="settings"&&!sheet.open&&(
+        <button onClick={()=>openSheet("personal_out")} aria-label="Add expense"
+          style={{position:"fixed",bottom:96,right:"max(18px, calc(50vw - 222px))",width:54,height:54,borderRadius:14,background:D.rose,border:"none",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:99}}>
+          <G d={IC.plus} s={24} c="#fff"/>
+        </button>
+      )}
 
       {/* Floating pill nav */}
       <div style={{position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",width:"calc(100% - 32px)",maxWidth:448,background:"rgba(13,15,26,0.92)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${D.b2}`,borderRadius:100,display:"flex",zIndex:100,padding:"4px",boxShadow:"0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)"}}>
