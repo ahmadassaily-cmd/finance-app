@@ -4,7 +4,7 @@ import { Inter } from "next/font/google";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
 import * as db from "@/lib/supabase/db";
-import type { TxType, Tx, Monthly, DebtPayment, Debt, Settings } from "@/lib/types";
+import type { TxType, Tx, Monthly, DebtPayment, Debt, Settings, Account, AccountKind } from "@/lib/types";
 
 const font = Inter({ subsets: ["latin"], display: "swap", weight: ["400","500","600","700"] });
 
@@ -24,14 +24,13 @@ const MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","D
 
 // ── DESIGN SYSTEM ─────────────────────────────────────────────────────────────
 const D = {
-  bg:"#06080F", s1:"#0B0E19", s2:"#101420", s3:"#161B2C",
-  b0:"rgba(255,255,255,0.04)", b1:"rgba(255,255,255,0.08)", b2:"rgba(255,255,255,0.14)",
-  indigo:"#6366F1", indigoDim:"rgba(99,102,241,0.14)",
-  teal:"#2DD4A0", tealDim:"rgba(45,212,160,0.12)",
-  rose:"#FF4D72", roseDim:"rgba(255,77,114,0.12)",
-  amber:"#FBBF24", amberDim:"rgba(251,191,36,0.12)",
-  violet:"#A78BFA", violetDim:"rgba(167,139,250,0.12)",
-  t1:"#ECF0FA", t2:"#7C88A2", t3:"#3D4558",
+  bg:"#070B16", s1:"#0B1122", s2:"#111A33", s3:"#17223F",
+  b0:"rgba(212,193,255,0.04)", b1:"rgba(212,193,255,0.09)", b2:"rgba(212,193,255,0.16)",
+  gold:"#D4AF6A", goldDim:"rgba(212,175,106,0.14)",
+  teal:"#31D8AC", tealDim:"rgba(49,216,172,0.12)",
+  rose:"#F0556E", roseDim:"rgba(240,85,110,0.12)",
+  violet:"#8B8FE8", violetDim:"rgba(139,143,232,0.14)",
+  t1:"#F4F1E8", t2:"#8792AD", t3:"#47517A",
 };
 
 // ── UTILS ──────────────────────────────────────────────────────────────────────
@@ -71,6 +70,7 @@ const IC={
   warn:"M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01",
   trend:"M23 6l-9.5 9.5-5-5L1 18",
   card:["M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z","M2 10h20"],
+  coin:["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z","M12 6.5v11","M14.8 9a2.6 2.6 0 0 0-2.6-2H11a2.3 2.3 0 0 0 0 4.6h2a2.3 2.3 0 0 1 0 4.6h-1.4a2.6 2.6 0 0 1-2.6-2"],
 };
 
 // ── SHARED UI ──────────────────────────────────────────────────────────────────
@@ -97,6 +97,50 @@ const EmptyState=({icon,title,sub,color}:{icon:string|string[];title:string;sub:
     <div style={{fontSize:13,color:D.t2}}>{sub}</div>
   </div>
 );
+
+// ── SHARED LAYOUT ──────────────────────────────────────────────────────────────
+const PageHeader=({title,sub}:{title:string;sub:string})=>(
+  <div>
+    <div style={{fontSize:28,fontWeight:800,color:D.t1,letterSpacing:"-0.03em",marginBottom:4}}>{title}</div>
+    <div style={{fontSize:13,color:D.t2}}>{sub}</div>
+  </div>
+);
+
+const StatRow=({stats}:{stats:{l:string;v:string;c:string}[]})=>(
+  <div style={{display:"flex",background:D.s2,border:`1px solid ${D.b1}`,borderRadius:18,overflow:"hidden"}}>
+    {stats.map((s,i)=>(
+      <div key={s.l} style={{flex:1,padding:"16px 12px",textAlign:"center" as const,borderLeft:i>0?`1px solid ${D.b0}`:"none"}}>
+        <div style={{fontSize:11,color:D.t2,marginBottom:8}}>{s.l}</div>
+        <div style={{fontSize:16,fontWeight:800,color:s.c,fontVariantNumeric:"tabular-nums"}}>{s.v}</div>
+      </div>
+    ))}
+  </div>
+);
+
+const AccountCard=({account,usage,onDelete}:{account:Account;usage?:{used:number;available?:number};onDelete?:()=>void})=>{
+  const isCredit=account.kind==="credit_card"&&account.creditLimit!=null;
+  const pct=isCredit?Math.min(100,((usage?.used||0)/account.creditLimit!)*100):0;
+  return(
+    <div style={{minWidth:210,width:210,borderRadius:18,padding:"18px 18px 16px",flexShrink:0,position:"relative",overflow:"hidden",background:`linear-gradient(135deg, ${D.s3} 0%, ${D.s2} 65%, ${D.s1} 100%)`,border:`1px solid ${D.b2}`}}>
+      <div style={{position:"absolute",top:-30,right:-30,width:110,height:110,borderRadius:"50%",background:`radial-gradient(circle, ${D.gold}22 0%, transparent 70%)`,pointerEvents:"none"}}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,position:"relative"}}>
+        <G d={accountKindIcon(account.kind)} s={20} c={D.gold}/>
+        {onDelete&&<button onClick={onDelete} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:0}}><G d={IC.trash} s={13}/></button>}
+      </div>
+      <div style={{fontSize:15,fontWeight:700,color:D.t1,marginBottom:3,whiteSpace:"nowrap" as const,overflow:"hidden",textOverflow:"ellipsis"}}>{account.name}</div>
+      <div style={{fontSize:11,color:D.t2,marginBottom:isCredit?14:0}}>{accountKindLabel(account.kind)}</div>
+      {isCredit&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+            <span style={{fontSize:13,fontWeight:800,color:D.t1}}>{money(usage?.used||0,sym(account.currency),true)}</span>
+            <span style={{fontSize:11,color:D.t3}}>of {money(account.creditLimit!,sym(account.currency),true)}</span>
+          </div>
+          <Prog val={pct} col={pct>85?D.rose:D.gold} h={4}/>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── BOTTOM SHEET ───────────────────────────────────────────────────────────────
 const Sheet=({open,onClose,title,children,tall}:{open:boolean;onClose:()=>void;title:string;children:React.ReactNode;tall?:boolean})=>{
@@ -128,7 +172,7 @@ const Inp=({label,type="text",val,onChange,placeholder,min,max,autoFocus}:{label
     <Lbl>{label}</Lbl>
     <input type={type} value={val} onChange={e=>onChange(e.target.value)} placeholder={placeholder} min={min} max={max} autoFocus={autoFocus}
       style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,padding:"14px 16px",color:D.t1,fontSize:15,fontWeight:500,outline:"none",fontFamily:"inherit",transition:"border-color .2s"}}
-      onFocus={e=>{e.target.style.borderColor=D.indigo;e.target.style.boxShadow=`0 0 0 3px ${D.indigoDim}`;}}
+      onFocus={e=>{e.target.style.borderColor=D.gold;e.target.style.boxShadow=`0 0 0 3px ${D.goldDim}`;}}
       onBlur={e=>{e.target.style.borderColor=D.b1;e.target.style.boxShadow="none";}}
     />
   </div>
@@ -148,14 +192,14 @@ const Sel=({label,val,onChange,opts}:{label:string;val:string;onChange:(v:string
 const Toggler=({on,toggle,label,sub}:{on:boolean;toggle:()=>void;label:string;sub?:string})=>(
   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,padding:"14px 16px"}}>
     <div><div style={{fontSize:14,fontWeight:600,color:D.t1}}>{label}</div>{sub&&<div style={{fontSize:12,color:D.t2,marginTop:3}}>{sub}</div>}</div>
-    <button onClick={toggle} style={{width:50,height:28,borderRadius:14,background:on?D.indigo:D.b2,border:"none",cursor:"pointer",position:"relative",transition:"background .25s",flexShrink:0}}>
+    <button onClick={toggle} style={{width:50,height:28,borderRadius:14,background:on?D.gold:D.b2,border:"none",cursor:"pointer",position:"relative",transition:"background .25s",flexShrink:0}}>
       <div style={{position:"absolute",top:4,left:on?26:4,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left .25s",boxShadow:"0 2px 6px rgba(0,0,0,0.3)"}}/>
     </button>
   </div>
 );
 
 const PrimaryBtn=({label,onClick,color,disabled,icon}:{label:string;onClick:()=>void;color?:string;disabled?:boolean;icon?:string})=>{
-  const c=color||D.indigo;
+  const c=color||D.gold;
   return(
     <button onClick={onClick} disabled={disabled}
       style={{width:"100%",padding:"15px",background:disabled?D.s3:c,border:disabled?`1px solid ${D.b1}`:"none",borderRadius:12,color:disabled?D.t3:"#fff",fontSize:15,fontWeight:700,cursor:disabled?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"opacity .15s",fontFamily:"inherit"}}>
@@ -189,11 +233,28 @@ const ChipGroup=({label,val,onChange,opts,color}:{label:string;val:string;onChan
   </div>
 );
 
+const ACCOUNT_KINDS:{v:AccountKind;l:string;icon:string|string[]}[]=[
+  {v:"bank",l:"Bank Account",icon:IC.bank},{v:"credit_card",l:"Credit Card",icon:IC.card},{v:"crypto",l:"Crypto Wallet",icon:IC.coin},
+];
+const accountKindLabel=(k:AccountKind)=>ACCOUNT_KINDS.find(a=>a.v===k)?.l||k;
+const accountKindIcon=(k:AccountKind)=>ACCOUNT_KINDS.find(a=>a.v===k)?.icon||IC.bank;
+
+const AccountPicker=({label,val,onChange,accounts,color}:{label:string;val:string|undefined;onChange:(v:string|undefined)=>void;accounts:Account[];color:string})=>(
+  <div>
+    <Lbl>{label}</Lbl>
+    <div style={{display:"flex",flexWrap:"wrap" as const,gap:8}}>
+      <Chip label="Cash" active={!val} color={color} onClick={()=>onChange(undefined)}/>
+      {accounts.map(a=><Chip key={a.id} label={a.name} active={val===a.id} color={color} onClick={()=>onChange(a.id)}/>)}
+    </div>
+  </div>
+);
+
 // ── TRANSACTION ROW ────────────────────────────────────────────────────────────
-const TxRow=({tx,onDel}:{tx:Tx;onDel:()=>void})=>{
+const TxRow=({tx,accounts,onDel}:{tx:Tx;accounts:Account[];onDel:()=>void})=>{
   const isIn=tx.type==="company_in"||tx.type==="personal_in";
   const isCompany=tx.type==="company_in"||tx.type==="company_out";
   const c=isIn?D.teal:D.rose;
+  const account=tx.accountId?accounts.find(a=>a.id===tx.accountId):undefined;
   return(
     <div style={{display:"flex",alignItems:"center",padding:"15px 0",borderBottom:`1px solid ${D.b0}`,gap:14}}>
       <div style={{width:44,height:44,borderRadius:14,background:isIn?D.tealDim:D.roseDim,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,border:`1px solid ${c}22`}}>
@@ -201,17 +262,17 @@ const TxRow=({tx,onDel}:{tx:Tx;onDel:()=>void})=>{
       </div>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:14,fontWeight:600,color:D.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{tx.description}</div>
-        <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center"}}>
+        <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center",flexWrap:"wrap" as const}}>
           <span style={{fontSize:11,color:D.t2}}>{tx.category}</span>
           <span style={{fontSize:11,color:D.b2}}>·</span>
           <span style={{fontSize:11,color:D.t3}}>{tx.date}</span>
-          {tx.payment==="credit"&&(
-            <span style={{display:"flex",alignItems:"center",gap:3,fontSize:11,color:D.amber}}>
-              <span style={{color:D.b2}}>·</span><G d={IC.card} s={11} c={D.amber}/>{tx.card}
+          {account&&(
+            <span style={{display:"flex",alignItems:"center",gap:3,fontSize:11,color:D.gold}}>
+              <span style={{color:D.b2}}>·</span><G d={accountKindIcon(account.kind)} s={11} c={D.gold}/>{account.name}
             </span>
           )}
           {isCompany&&!!tx.myShare&&(
-            <span style={{fontSize:11,color:D.amber}}>· {money(tx.myShare,sym(tx.currency))} yours</span>
+            <span style={{fontSize:11,color:D.gold}}>· {money(tx.myShare,sym(tx.currency))} yours</span>
           )}
         </div>
       </div>
@@ -224,8 +285,9 @@ const TxRow=({tx,onDel}:{tx:Tx;onDel:()=>void})=>{
 };
 
 // ── MONTHLY ROW ────────────────────────────────────────────────────────────────
-const MonthlyRow=({m,onDel,onToggle}:{m:Monthly;onDel:()=>void;onToggle:()=>void})=>{
-  const c=m.scope==="company"?D.amber:D.violet;
+const MonthlyRow=({m,accounts,onDel,onToggle}:{m:Monthly;accounts:Account[];onDel:()=>void;onToggle:()=>void})=>{
+  const c=m.scope==="company"?D.gold:D.violet;
+  const account=m.accountId?accounts.find(a=>a.id===m.accountId):undefined;
   return(
     <div style={{display:"flex",alignItems:"center",padding:"14px 0",borderBottom:`1px solid ${D.b0}`,gap:12}}>
       <div style={{width:42,height:42,borderRadius:13,background:c+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,border:`1px solid ${c}22`}}>
@@ -233,10 +295,15 @@ const MonthlyRow=({m,onDel,onToggle}:{m:Monthly;onDel:()=>void;onToggle:()=>void
       </div>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:14,fontWeight:600,color:m.active?D.t1:D.t2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{m.name}</div>
-        <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center"}}>
+        <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center",flexWrap:"wrap" as const}}>
           <span style={{fontSize:11,color:D.t2}}>Due {ordinal(m.dueDay)}</span>
           <span style={{fontSize:11,color:D.b2}}>·</span>
           <span style={{fontSize:11,color:D.t2}}>{m.category}</span>
+          {account&&(
+            <span style={{display:"flex",alignItems:"center",gap:3,fontSize:11,color:D.t2}}>
+              <span style={{color:D.b2}}>·</span><G d={accountKindIcon(account.kind)} s={11} c={D.t2}/>{account.name}
+            </span>
+          )}
           {!m.active&&<Badge label="Paused" color={D.t3}/>}
         </div>
       </div>
@@ -252,26 +319,23 @@ const MonthlyRow=({m,onDel,onToggle}:{m:Monthly;onDel:()=>void;onToggle:()=>void
 };
 
 // ── ADD FORMS ──────────────────────────────────────────────────────────────────
-const PAID_WITH:{v:"cash"|"debit"|"credit";l:string}[]=[{v:"cash",l:"Cash"},{v:"debit",l:"Debit Card"},{v:"credit",l:"Credit Card"}];
-
-const AddTxForm=({type,onAdd,onClose,defCur}:{type:TxType;onAdd:(t:Tx)=>void;onClose:()=>void;defCur:string})=>{
+const AddTxForm=({type,onAdd,onClose,defCur,accounts}:{type:TxType;onAdd:(t:Tx)=>void;onClose:()=>void;defCur:string;accounts:Account[]})=>{
   const [amt,setAmt]=useState("");const [desc,setDesc]=useState("");const [cat,setCat]=useState("");
   const [date,setDate]=useState(today());const [notes,setNotes]=useState("");const [cur,setCur]=useState(defCur);
   const [myShare,setMyShare]=useState("");
-  const [payment,setPayment]=useState<"cash"|"debit"|"credit">("debit");
-  const [card,setCard]=useState("");
+  const [accountId,setAccountId]=useState<string|undefined>(undefined);
   const [more,setMore]=useState(false);
   const isIn=type==="company_in"||type==="personal_in";
   const isCompany=type==="company_in"||type==="company_out";
+  const showAccountPicker=type==="personal_out"||type==="company_out";
   const cats=type==="company_in"?COMPANY_IN_CATS:type==="company_out"?COMPANY_OUT_CATS:type==="personal_in"?PERSONAL_IN_CATS:PERSONAL_OUT_CATS;
   const c=isIn?D.teal:D.rose;
-  const needsCard=type==="personal_out"&&payment==="credit";
-  const ok=!!amt&&!!cat&&(!needsCard||!!card);
+  const ok=!!amt&&!!cat;
   const handle=()=>{
     if(!ok)return;
     const tx:Tx={id:uid(),type,amount:parseFloat(amt),description:desc||cat,category:cat,date,notes,currency:cur,createdAt:new Date().toISOString()};
     if(isCompany&&myShare)tx.myShare=parseFloat(myShare)||0;
-    if(type==="personal_out"){tx.payment=payment;if(payment==="credit")tx.card=card;}
+    if(showAccountPicker&&accountId)tx.accountId=accountId;
     onAdd(tx);onClose();
   };
   return(<>
@@ -280,15 +344,7 @@ const AddTxForm=({type,onAdd,onClose,defCur}:{type:TxType;onAdd:(t:Tx)=>void;onC
     {isCompany&&(
       <Inp label={type==="company_in"?"How much of this is yours? (optional)":"How much are you personally paying? (optional)"} type="number" val={myShare} onChange={setMyShare} placeholder={`${sym(cur)} 0.00`}/>
     )}
-    {type==="personal_out"&&(
-      <div>
-        <Lbl>Paid With</Lbl>
-        <div style={{display:"flex",flexWrap:"wrap" as const,gap:8}}>
-          {PAID_WITH.map(p=><Chip key={p.v} label={p.l} active={payment===p.v} color={c} onClick={()=>setPayment(p.v)}/>)}
-        </div>
-      </div>
-    )}
-    {needsCard&&<Inp label="Which card / bank?" val={card} onChange={setCard} placeholder="e.g. CIB Visa, Chase Sapphire…"/>}
+    {showAccountPicker&&<AccountPicker label="Paid With" val={accountId} onChange={setAccountId} accounts={accounts} color={c}/>}
     <Inp label="Description (optional)" val={desc} onChange={setDesc} placeholder={cat||"What is this for?"}/>
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     {!more
@@ -303,12 +359,13 @@ const AddTxForm=({type,onAdd,onClose,defCur}:{type:TxType;onAdd:(t:Tx)=>void;onC
 
 const SUBSCRIPTION_PRESETS = ["Netflix","Spotify","YouTube Premium","iCloud+","Amazon Prime","Disney+","Gym Membership","Internet & Phone"];
 
-const AddMonthlyForm=({scope,onAdd,onClose,defCur}:{scope:"personal"|"company";onAdd:(m:Monthly)=>void;onClose:()=>void;defCur:string})=>{
+const AddMonthlyForm=({scope,onAdd,onClose,defCur,accounts}:{scope:"personal"|"company";onAdd:(m:Monthly)=>void;onClose:()=>void;defCur:string;accounts:Account[]})=>{
   const [name,setName]=useState("");const [amt,setAmt]=useState("");const [cat,setCat]=useState("");
   const [day,setDay]=useState("1");const [cur,setCur]=useState(defCur);const [notes,setNotes]=useState("");
+  const [accountId,setAccountId]=useState<string|undefined>(undefined);
   const cats=scope==="company"?COMPANY_M_CATS:PERSONAL_M_CATS;const ok=!!name&&!!amt&&!!cat;
-  const col=scope==="company"?D.amber:D.violet;
-  const handle=()=>{if(!ok)return;onAdd({id:uid(),scope,name,amount:parseFloat(amt),currency:cur,dueDay:parseInt(day)||1,category:cat,notes,active:true,createdAt:new Date().toISOString()});onClose();};
+  const col=scope==="company"?D.gold:D.violet;
+  const handle=()=>{if(!ok)return;onAdd({id:uid(),scope,name,amount:parseFloat(amt),currency:cur,dueDay:parseInt(day)||1,category:cat,notes,active:true,createdAt:new Date().toISOString(),accountId});onClose();};
   return(<>
     {scope==="personal"&&(
       <div>
@@ -323,6 +380,7 @@ const AddMonthlyForm=({scope,onAdd,onClose,defCur}:{scope:"personal"|"company";o
     <Inp label="Expense Name" val={name} onChange={setName} placeholder="e.g. Netflix, Rent, Family Support…"/>
     <Inp label="Amount" type="number" val={amt} onChange={setAmt} placeholder={`${sym(cur)} 0.00`}/>
     <ChipGroup label="Category" val={cat} onChange={setCat} opts={cats} color={col}/>
+    <AccountPicker label={scope==="company"?"Paid With":"Billed To"} val={accountId} onChange={setAccountId} accounts={accounts} color={col}/>
     <Inp label="Due Day of Month (1–31)" type="number" val={day} onChange={setDay} min="1" max="31"/>
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     <Inp label="Notes (optional)" val={notes} onChange={setNotes} placeholder="e.g. for the house on Al-Thawra street…"/>
@@ -363,13 +421,38 @@ const PayForm=({debt,onPay,onClose}:{debt:Debt;onPay:(n:number,note:string,date:
   </>);
 };
 
+const AddAccountForm=({onAdd,onClose,defCur}:{onAdd:(a:Account)=>void;onClose:()=>void;defCur:string})=>{
+  const [name,setName]=useState("");const [kind,setKind]=useState<AccountKind>("bank");
+  const [limit,setLimit]=useState("");const [cur,setCur]=useState(defCur);
+  const ok=!!name;
+  const handle=()=>{
+    if(!ok)return;
+    const a:Account={id:uid(),name,kind,currency:cur,createdAt:new Date().toISOString()};
+    if(kind==="credit_card"&&limit)a.creditLimit=parseFloat(limit)||undefined;
+    onAdd(a);onClose();
+  };
+  return(<>
+    <Inp label="Account Name" val={name} onChange={setName} placeholder="e.g. CIB Visa, Chase Checking, Binance…" autoFocus/>
+    <div>
+      <Lbl>Type</Lbl>
+      <div style={{display:"flex",flexWrap:"wrap" as const,gap:8}}>
+        {ACCOUNT_KINDS.map(k=><Chip key={k.v} label={k.l} active={kind===k.v} color={D.gold} onClick={()=>setKind(k.v)}/>)}
+      </div>
+    </div>
+    {kind==="credit_card"&&<Inp label="Credit Limit (optional)" type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>}
+    <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
+    <PrimaryBtn label="Add Account" onClick={handle} color={D.gold} disabled={!ok}/>
+  </>);
+};
+
 // ── MAIN APP ───────────────────────────────────────────────────────────────────
 function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const [tab,setTab]=useState("home");
   const [txs,setTxs]=useState<Tx[]>([]);
   const [monthly,setMonthly]=useState<Monthly[]>([]);
   const [debts,setDebts]=useState<Debt[]>([]);
-  const [settings,setSettings]=useState<Settings>({currency:"USD",name:""});
+  const [accounts,setAccounts]=useState<Account[]>([]);
+  const [settings,setSettings]=useState<Settings>({currency:"USD",name:"",savings:0});
   const [sheet,setSheet]=useState<{open:boolean;key:string;debt?:Debt}>({open:false,key:""});
   const [ready,setReady]=useState(false);
 
@@ -379,7 +462,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
       try{
         const data=await db.fetchAll(userId);
         if(cancelled)return;
-        setTxs(data.txs);setMonthly(data.monthly);setDebts(data.debts);setSettings(data.settings);
+        setTxs(data.txs);setMonthly(data.monthly);setDebts(data.debts);setSettings(data.settings);setAccounts(data.accounts);
       }catch(err){
         console.error(err);
         window.alert("Couldn't load your data. Please refresh the page.");
@@ -395,28 +478,29 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   // Mutations
   const addTx=useCallback(async(t:Tx)=>{
     try{
-      const saved=await db.insertTx(userId,{type:t.type,amount:t.amount,description:t.description,category:t.category,date:t.date,notes:t.notes,currency:t.currency,myShare:t.myShare,payment:t.payment,card:t.card});
+      const saved=await db.insertTx(userId,{type:t.type,amount:t.amount,description:t.description,category:t.category,date:t.date,notes:t.notes,currency:t.currency,myShare:t.myShare,accountId:t.accountId});
       setTxs(p=>[saved,...p]);
-      if(saved.type==="personal_out"&&saved.payment==="credit"&&saved.card){
-        const existing=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===saved.card!.toLowerCase());
+      const account=saved.accountId?accounts.find(a=>a.id===saved.accountId):undefined;
+      if(saved.type==="personal_out"&&account?.kind==="credit_card"){
+        const existing=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===account.name.toLowerCase());
         if(existing){
           const newTotal=existing.totalAmount+saved.amount;
           await db.setDebtTotal(existing.id,newTotal);
           setDebts(p=>p.map(d=>d.id===existing.id?{...d,totalAmount:newTotal}:d));
         }else{
-          const newDebt=await db.insertDebt(userId,{personBank:saved.card,totalAmount:saved.amount,currency:saved.currency,description:"Credit Card Spending"});
+          const newDebt=await db.insertDebt(userId,{personBank:account.name,totalAmount:saved.amount,currency:saved.currency,description:"Credit Card Spending"});
           setDebts(p=>[newDebt,...p]);
         }
       }
     }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
-  },[userId,debts]);
+  },[userId,debts,accounts]);
   const delTx=useCallback((id:string)=>{
     setTxs(p=>p.filter(t=>t.id!==id));
     db.deleteTx(id).catch(err=>console.error(err));
   },[]);
   const addMonthly=useCallback(async(m:Monthly)=>{
     try{
-      const saved=await db.insertMonthly(userId,{scope:m.scope,name:m.name,amount:m.amount,currency:m.currency,dueDay:m.dueDay,category:m.category,notes:m.notes,active:m.active});
+      const saved=await db.insertMonthly(userId,{scope:m.scope,name:m.name,amount:m.amount,currency:m.currency,dueDay:m.dueDay,category:m.category,notes:m.notes,active:m.active,accountId:m.accountId});
       setMonthly(p=>[saved,...p]);
     }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
   },[userId]);
@@ -430,6 +514,16 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
       if(target)db.setMonthlyActive(id,!target.active).catch(err=>console.error(err));
       return p.map(m=>m.id===id?{...m,active:!m.active}:m);
     });
+  },[]);
+  const addAccount=useCallback(async(a:Account)=>{
+    try{
+      const saved=await db.insertAccount(userId,{name:a.name,kind:a.kind,creditLimit:a.creditLimit,currency:a.currency});
+      setAccounts(p=>[saved,...p]);
+    }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
+  },[userId]);
+  const delAccount=useCallback((id:string)=>{
+    setAccounts(p=>p.filter(a=>a.id!==id));
+    db.deleteAccount(id).catch(err=>console.error(err));
   },[]);
   const addDebt=useCallback(async(d:Debt)=>{
     try{
@@ -457,8 +551,9 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const myCutIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+(t.myShare||0),0);
   const myCutOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+(t.myShare||0),0);
   const myCut=myCutIn-myCutOut;
+  const isCreditTx=(t:Tx)=>accounts.find(a=>a.id===t.accountId)?.kind==="credit_card";
   const perIn=txs.filter(t=>t.type==="personal_in").reduce((s,t)=>s+t.amount,0);
-  const perOut=txs.filter(t=>t.type==="personal_out"&&t.payment!=="credit").reduce((s,t)=>s+t.amount,0);
+  const perOut=txs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+t.amount,0);
   const perMonthly=monthly.filter(m=>m.scope==="personal"&&m.active);
   const perMonthlyTotal=perMonthly.reduce((s,m)=>s+m.amount,0);
   const debtRemaining=(d:Debt)=>d.totalAmount-d.payments.reduce((s,p)=>s+p.amount,0);
@@ -473,7 +568,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const mCompIn=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+t.amount,0);
   const mCompOut=mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+t.amount,0);
   const mMyCut=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+(t.myShare||0),0)-mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+(t.myShare||0),0);
-  const mPerOut=mTxs.filter(t=>t.type==="personal_out"&&t.payment!=="credit").reduce((s,t)=>s+t.amount,0);
+  const mPerOut=mTxs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+t.amount,0);
 
   const openSheet=(key:string,debt?:Debt)=>setSheet({open:true,key,debt});
   const closeSheet=()=>setSheet({open:false,key:""});
@@ -484,23 +579,33 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const HomeTab=()=>(
     <div>
       {/* Hero */}
-      <div style={{padding:"44px 22px 36px",background:`radial-gradient(ellipse at 60% 0%, ${D.indigoDim} 0%, transparent 70%)`,position:"relative",overflow:"hidden"}}>
-        <div style={{position:"absolute",top:-40,right:-40,width:200,height:200,borderRadius:"50%",background:`radial-gradient(circle, ${D.indigo}18 0%, transparent 70%)`,pointerEvents:"none"}}/>
-        <div style={{fontSize:12,fontWeight:700,color:D.t2,letterSpacing:"0.12em",textTransform:"uppercase" as const,marginBottom:10}}>
-          {settings.name?`${settings.name}'s `:""}Finance OS
+      <div style={{padding:"40px 22px 28px",position:"relative",overflow:"hidden"}}>
+        <div style={{fontSize:13,color:D.t2,marginBottom:12}}>
+          {settings.name?`Welcome back, ${settings.name}`:"Total net position"}
         </div>
-        <div style={{fontSize:11,color:D.t3,marginBottom:14}}>Total net position</div>
-        <div style={{fontSize:52,fontWeight:900,letterSpacing:"-0.04em",lineHeight:1,marginBottom:20,fontVariantNumeric:"tabular-nums",
-          background:netPos>=0?`linear-gradient(135deg, ${D.teal}, #20E3B2)`:`linear-gradient(135deg, ${D.rose}, #FF8FA3)`,
-          WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
-          {netPos>=0?"+":""}{money(netPos,S,true)}
+        <div style={{fontSize:48,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1,marginBottom:22,fontVariantNumeric:"tabular-nums",color:D.t1}}>
+          {netPos>=0?"+":"-"}{money(Math.abs(netPos),S,true)}
         </div>
         <div style={{display:"flex",gap:24}}>
-          {[{l:"My Cut",v:money(myCut,S,true),c:D.amber},{l:"Personal",v:money(perIn-perOut,S,true),c:perIn-perOut>=0?D.teal:D.rose},{l:"Debts Left",v:money(totalDebtLeft,S,true),c:D.rose}].map(s=>(
+          {[{l:"My Cut",v:money(myCut,S,true),c:D.gold},{l:"Personal",v:money(perIn-perOut,S,true),c:perIn-perOut>=0?D.teal:D.rose},{l:"Debts Left",v:money(totalDebtLeft,S,true),c:D.rose}].map(s=>(
             <div key={s.l}><div style={{fontSize:11,color:D.t3,marginBottom:4}}>{s.l}</div><div style={{fontSize:15,fontWeight:800,color:s.c,fontVariantNumeric:"tabular-nums"}}>{s.v}</div></div>
           ))}
         </div>
       </div>
+
+      {/* Accounts */}
+      {accounts.length>0&&(
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:15,fontWeight:700,color:D.t1,padding:"0 16px 12px"}}>Your Accounts</div>
+          <div style={{display:"flex",gap:12,overflowX:"auto" as const,padding:"0 16px 6px"}}>
+            {accounts.map(a=>{
+              const debt=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===a.name.toLowerCase());
+              const used=debt?debt.totalAmount-debt.payments.reduce((s,p)=>s+p.amount,0):0;
+              return<AccountCard key={a.id} account={a} usage={{used}}/>;
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={{padding:"22px 16px 20px",display:"flex",flexDirection:"column",gap:20}}>
         {/* This month */}
@@ -509,7 +614,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:"18px 16px"}}>
             <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:10}}>Company Revenue</div>
             <div style={{fontSize:24,fontWeight:900,color:D.teal,fontVariantNumeric:"tabular-nums",marginBottom:6}}>{money(mCompIn,S,true)}</div>
-            <div style={{fontSize:11,color:D.amber}}>My cut: {money(mMyCut,S,true)}</div>
+            <div style={{fontSize:11,color:D.gold}}>My cut: {money(mMyCut,S,true)}</div>
           </div>
           <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:"18px 16px"}}>
             <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:10}}>Company Expenses</div>
@@ -525,8 +630,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
             {l:"Total Revenue In",v:compIn,c:D.teal},
             {l:"Total Expenses Out",v:compOut,c:D.rose},
             {l:"Company Net Profit",v:compProfit,c:compProfit>=0?D.teal:D.rose},
-            {l:"My Cut",v:myCut,c:D.amber},
-            {l:"Monthly Fixed Costs",v:compMonthlyTotal,c:D.amber,sub:"/mo"},
+            {l:"My Cut",v:myCut,c:D.gold},
+            {l:"Monthly Fixed Costs",v:compMonthlyTotal,c:D.gold,sub:"/mo"},
           ].map((row,i)=>(
             <div key={row.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:i<4?`1px solid ${D.b0}`:"none"}}>
               <span style={{fontSize:13,color:D.t2}}>{row.l}</span>
@@ -554,8 +659,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         <div style={{fontSize:11,fontWeight:700,color:D.t3,letterSpacing:"0.1em",textTransform:"uppercase" as const}}>Recent Transactions</div>
         <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,overflow:"hidden"}}>
           {txs.length>0
-            ?<div style={{padding:"0 18px"}}>{txs.slice(0,6).map(tx=><TxRow key={tx.id} tx={tx} onDel={()=>delTx(tx.id)}/>)}</div>
-            :<EmptyState icon={IC.trend} color={D.indigo} title="No transactions yet" sub="Start by adding company revenue or a personal expense."/>}
+            ?<div style={{padding:"0 18px"}}>{txs.slice(0,6).map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx.id)}/>)}</div>
+            :<EmptyState icon={IC.trend} color={D.gold} title="No transactions yet" sub="Start by adding company revenue or a personal expense."/>}
         </div>
 
         {/* Quick add */}
@@ -575,23 +680,12 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [view,setView]=useState<"in"|"out"|"monthly">("in");
     const list=txs.filter(t=>t.type===(view==="in"?"company_in":"company_out"));
     const compMonthly=monthly.filter(m=>m.scope==="company");
-    const col=view==="in"?D.teal:view==="out"?D.rose:D.amber;
+    const col=view==="in"?D.teal:view==="out"?D.rose:D.gold;
     return(
       <div style={{padding:"22px 16px",display:"flex",flexDirection:"column",gap:20}}>
-        <div>
-          <div style={{fontSize:26,fontWeight:900,color:D.t1,letterSpacing:"-0.03em",marginBottom:4}}>Company</div>
-          <div style={{fontSize:13,color:D.t2}}>{txs.filter(t=>t.type.startsWith("company")).length} transactions · {compMonthly.length} monthly</div>
-        </div>
+        <PageHeader title="Company" sub={`${txs.filter(t=>t.type.startsWith("company")).length} transactions · ${compMonthly.length} monthly`}/>
 
-        {/* 3 stat cards */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          {[{l:"Revenue",v:compIn,c:D.teal},{l:"Expenses",v:compOut,c:D.rose},{l:"My Cut",v:myCut,c:D.amber}].map(s=>(
-            <div key={s.l} style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:16,padding:"14px 12px",textAlign:"center" as const}}>
-              <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase" as const,marginBottom:8}}>{s.l}</div>
-              <div style={{fontSize:15,fontWeight:900,color:s.c,fontVariantNumeric:"tabular-nums"}}>{money(s.v,S,true)}</div>
-            </div>
-          ))}
-        </div>
+        <StatRow stats={[{l:"Revenue",v:money(compIn,S,true),c:D.teal},{l:"Expenses",v:money(compOut,S,true),c:D.rose},{l:"My Cut",v:money(myCut,S,true),c:D.gold}]}/>
 
         {/* Profit card */}
         <div style={{background:D.s2,border:`1px solid ${compProfit>=0?D.teal+"33":D.rose+"33"}`,borderRadius:20,padding:"18px 20px"}}>
@@ -603,18 +697,18 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 
         {/* Monthly fixed costs summary */}
         {compMonthlyActive.length>0&&(
-          <div style={{background:D.amberDim,border:`1px solid ${D.amber}33`,borderRadius:16,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{background:D.goldDim,border:`1px solid ${D.gold}33`,borderRadius:16,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
-              <div style={{fontSize:11,color:D.amber,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:4}}>Monthly Fixed Costs</div>
+              <div style={{fontSize:11,color:D.gold,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:4}}>Monthly Fixed Costs</div>
               <div style={{fontSize:12,color:D.t2}}>{compMonthlyActive.length} recurring expenses</div>
             </div>
-            <div style={{fontSize:22,fontWeight:900,color:D.amber,fontVariantNumeric:"tabular-nums"}}>{money(compMonthlyTotal,S)}<span style={{fontSize:13,fontWeight:500}}>/mo</span></div>
+            <div style={{fontSize:22,fontWeight:900,color:D.gold,fontVariantNumeric:"tabular-nums"}}>{money(compMonthlyTotal,S)}<span style={{fontSize:13,fontWeight:500}}>/mo</span></div>
           </div>
         )}
 
         {/* View toggle */}
         <div style={{display:"flex",gap:6,background:D.s1,padding:5,borderRadius:16,border:`1px solid ${D.b0}`}}>
-          {[{id:"in",l:"Revenue In",c:D.teal},{id:"out",l:"Expenses Out",c:D.rose},{id:"monthly",l:"Monthly Fixed",c:D.amber}].map(v=>(
+          {[{id:"in",l:"Revenue In",c:D.teal},{id:"out",l:"Expenses Out",c:D.rose},{id:"monthly",l:"Monthly Fixed",c:D.gold}].map(v=>(
             <button key={v.id} onClick={()=>setView(v.id as typeof view)} style={{flex:1,padding:"10px 4px",borderRadius:12,background:view===v.id?v.c+"22":"transparent",border:`1px solid ${view===v.id?v.c+"55":"transparent"}`,color:view===v.id?v.c:D.t2,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all .2s"}}>
               {v.l}
             </button>
@@ -631,11 +725,11 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,overflow:"hidden"}}>
           {view==="monthly"?(
             compMonthly.length>0
-              ?<div style={{padding:"0 18px"}}>{compMonthly.map(m=><MonthlyRow key={m.id} m={m} onDel={()=>delMonthly(m.id)} onToggle={()=>toggleMonthly(m.id)}/>)}</div>
+              ?<div style={{padding:"0 18px"}}>{compMonthly.map(m=><MonthlyRow key={m.id} m={m} accounts={accounts} onDel={()=>delMonthly(m.id)} onToggle={()=>toggleMonthly(m.id)}/>)}</div>
               :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No monthly costs added yet. Add recurring expenses like rent, salaries, or software.</div>
           ):(
             list.length>0
-              ?<div style={{padding:"0 18px"}}>{list.map(tx=><TxRow key={tx.id} tx={tx} onDel={()=>delTx(tx.id)}/>)}</div>
+              ?<div style={{padding:"0 18px"}}>{list.map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx.id)}/>)}</div>
               :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No {view==="in"?"revenue":"expenses"} recorded yet.</div>
           )}
         </div>
@@ -646,6 +740,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   // ── PERSONAL ───────────────────────────────────────────────────
   const PersonalTab=()=>{
     const [view,setView]=useState<"daily"|"monthly"|"income">("daily");
+    const [editingSavings,setEditingSavings]=useState(false);
+    const [savingsInput,setSavingsInput]=useState(String(settings.savings||0));
     const daily=txs.filter(t=>t.type==="personal_out");
     const income=txs.filter(t=>t.type==="personal_in");
     const col=view==="income"?D.teal:view==="monthly"?D.violet:D.rose;
@@ -654,21 +750,43 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     daily.forEach(t=>{cats[t.category]=(cats[t.category]||0)+t.amount;});
     const topCats=Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,5);
     const maxCat=topCats[0]?.[1]||1;
+    const saveSavings=async()=>{
+      const val=parseFloat(savingsInput)||0;
+      const next={...settings,savings:val};
+      setSettings(next);
+      setEditingSavings(false);
+      try{await db.upsertSettings(userId,next);}catch(err){console.error(err);window.alert("Couldn't save. Please try again.");}
+    };
     return(
       <div style={{padding:"22px 16px",display:"flex",flexDirection:"column",gap:20}}>
-        <div>
-          <div style={{fontSize:26,fontWeight:900,color:D.t1,letterSpacing:"-0.03em",marginBottom:4}}>Personal</div>
-          <div style={{fontSize:13,color:D.t2}}>{txs.filter(t=>t.type.startsWith("personal")).length} transactions · {perMonthly.length} monthly</div>
-        </div>
+        <PageHeader title="Personal" sub={`${txs.filter(t=>t.type.startsWith("personal")).length} transactions · ${perMonthly.length} monthly`}/>
 
-        {/* Stats */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          {[{l:"Income",v:perIn,c:D.teal},{l:"Spent",v:perOut,c:D.rose},{l:"Available",v:perIn-perOut,c:(perIn-perOut)>=0?D.teal:D.rose}].map(s=>(
-            <div key={s.l} style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:16,padding:"14px 12px",textAlign:"center" as const}}>
-              <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase" as const,marginBottom:8}}>{s.l}</div>
-              <div style={{fontSize:15,fontWeight:900,color:s.c,fontVariantNumeric:"tabular-nums"}}>{money(s.v,S,true)}</div>
+        <StatRow stats={[{l:"Income",v:money(perIn,S,true),c:D.teal},{l:"Spent",v:money(perOut,S,true),c:D.rose},{l:"Available",v:money(perIn-perOut,S,true),c:(perIn-perOut)>=0?D.teal:D.rose}]}/>
+
+        {/* Savings */}
+        <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:18,padding:"16px 18px"}}>
+          {editingSavings?(
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <Lbl>Total Savings</Lbl>
+              <input type="number" value={savingsInput} onChange={e=>setSavingsInput(e.target.value)} autoFocus placeholder={`${S} 0.00`}
+                style={{width:"100%",boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:12,padding:"12px 14px",color:D.t1,fontSize:15,fontWeight:600,outline:"none",fontFamily:"inherit"}}/>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setEditingSavings(false)} style={{flex:1,padding:"11px",background:"transparent",border:`1px solid ${D.b1}`,borderRadius:10,color:D.t2,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                <button onClick={saveSavings} style={{flex:1,padding:"11px",background:D.gold,border:"none",borderRadius:10,color:D.bg,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
+              </div>
             </div>
-          ))}
+          ):(
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:11,color:D.t2,marginBottom:6}}>Savings</div>
+                <div style={{fontSize:22,fontWeight:800,color:D.t1,fontVariantNumeric:"tabular-nums"}}>{money(settings.savings||0,S,true)}</div>
+              </div>
+              <button onClick={()=>{setSavingsInput(String(settings.savings||0));setEditingSavings(true);}}
+                style={{background:D.goldDim,border:`1px solid ${D.gold}44`,borderRadius:10,padding:"9px 14px",color:D.gold,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                Edit
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Monthly fixed */}
@@ -683,12 +801,12 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         )}
 
         {/* My company cut */}
-        <div style={{background:D.amberDim,border:`1px solid ${D.amber}33`,borderRadius:16,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{background:D.goldDim,border:`1px solid ${D.gold}33`,borderRadius:16,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
-            <div style={{fontSize:11,color:D.amber,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:4}}>Company Cut</div>
+            <div style={{fontSize:11,color:D.gold,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:4}}>Company Cut</div>
             <div style={{fontSize:12,color:D.t2}}>Your share of income, minus what you covered</div>
           </div>
-          <div style={{fontSize:22,fontWeight:900,color:D.amber,fontVariantNumeric:"tabular-nums"}}>{money(myCut,S,true)}</div>
+          <div style={{fontSize:22,fontWeight:900,color:D.gold,fontVariantNumeric:"tabular-nums"}}>{money(myCut,S,true)}</div>
         </div>
 
         {/* Spending breakdown */}
@@ -726,15 +844,15 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,overflow:"hidden"}}>
           {view==="monthly"?(
             perMonthly.length>0
-              ?<div style={{padding:"0 18px"}}>{perMonthly.map(m=><MonthlyRow key={m.id} m={m} onDel={()=>delMonthly(m.id)} onToggle={()=>toggleMonthly(m.id)}/>)}</div>
+              ?<div style={{padding:"0 18px"}}>{perMonthly.map(m=><MonthlyRow key={m.id} m={m} accounts={accounts} onDel={()=>delMonthly(m.id)} onToggle={()=>toggleMonthly(m.id)}/>)}</div>
               :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No monthly expenses. Add rent, family support, subscriptions, or friend loans.</div>
           ):view==="daily"?(
             daily.length>0
-              ?<div style={{padding:"0 18px"}}>{daily.map(tx=><TxRow key={tx.id} tx={tx} onDel={()=>delTx(tx.id)}/>)}</div>
+              ?<div style={{padding:"0 18px"}}>{daily.map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx.id)}/>)}</div>
               :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No daily expenses yet. Start tracking food, transport, shopping…</div>
           ):(
             income.length>0
-              ?<div style={{padding:"0 18px"}}>{income.map(tx=><TxRow key={tx.id} tx={tx} onDel={()=>delTx(tx.id)}/>)}</div>
+              ?<div style={{padding:"0 18px"}}>{income.map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx.id)}/>)}</div>
               :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No personal income recorded.</div>
           )}
         </div>
@@ -745,10 +863,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   // ── DEBTS ──────────────────────────────────────────────────────
   const DebtsTab=()=>(
     <div style={{padding:"22px 16px",display:"flex",flexDirection:"column",gap:20}}>
-      <div>
-        <div style={{fontSize:26,fontWeight:900,color:D.t1,letterSpacing:"-0.03em",marginBottom:4}}>Debts</div>
-        <div style={{fontSize:13,color:D.t2}}>{debts.length} debts tracked</div>
-      </div>
+      <PageHeader title="Debts" sub={`${debts.length} debts tracked`}/>
 
       {/* Summary */}
       <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:22,textAlign:"center" as const}}>
@@ -775,8 +890,9 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         const left=Math.max(0,debt.totalAmount-paid);
         const pct=debt.totalAmount>0?(paid/debt.totalAmount)*100:0;
         const ds=sym(debt.currency);
+        const linkedAccount=debt.description==="Credit Card Spending"?accounts.find(a=>a.kind==="credit_card"&&a.name.toLowerCase()===debt.personBank.toLowerCase()):undefined;
         const due=daysUntil(debt.dueDate);
-        const dueBadge=due!==null?(due<0?{l:"Overdue",c:D.rose}:due<=7?{l:`${due}d left`,c:D.amber}:{l:`${due}d left`,c:D.teal}):null;
+        const dueBadge=due!==null?(due<0?{l:"Overdue",c:D.rose}:due<=7?{l:`${due}d left`,c:D.gold}:{l:`${due}d left`,c:D.teal}):null;
         return(
           <div key={debt.id} style={{background:D.s2,border:`1px solid ${left===0?D.teal+"44":D.b1}`,borderRadius:20,overflow:"hidden"}}>
             {/* Header */}
@@ -784,8 +900,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
                 <div style={{flex:1,marginRight:12}}>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                    <div style={{width:36,height:36,borderRadius:11,background:D.indigoDim,border:`1px solid ${D.indigo}33`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      <G d={IC.bank} s={16} c={D.indigo}/>
+                    <div style={{width:36,height:36,borderRadius:11,background:D.goldDim,border:`1px solid ${D.gold}33`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      <G d={IC.bank} s={16} c={D.gold}/>
                     </div>
                     <div>
                       <div style={{fontSize:16,fontWeight:800,color:D.t1}}>{debt.personBank}</div>
@@ -802,7 +918,13 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
                 <div><div style={{fontSize:10,color:D.t3,marginBottom:3,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase" as const}}>Paid</div><div style={{fontSize:16,fontWeight:800,color:D.teal,fontVariantNumeric:"tabular-nums"}}>{money(paid,ds)}</div></div>
                 <div><div style={{fontSize:10,color:D.t3,marginBottom:3,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase" as const}}>Remaining</div><div style={{fontSize:16,fontWeight:800,color:left>0?D.rose:D.teal,fontVariantNumeric:"tabular-nums"}}>{money(left,ds)}</div></div>
               </div>
-              <Prog val={pct} col={pct>=100?D.teal:D.indigo} h={5}/>
+              <Prog val={pct} col={pct>=100?D.teal:D.gold} h={5}/>
+              {linkedAccount&&linkedAccount.creditLimit!=null&&(
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:10,paddingTop:10,borderTop:`1px solid ${D.b0}`,marginBottom:4}}>
+                  <span style={{fontSize:12,color:D.t2}}>Limit {money(linkedAccount.creditLimit,ds,true)}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:D.gold}}>{money(Math.max(0,linkedAccount.creditLimit-left),ds,true)} available</span>
+                </div>
+              )}
             </div>
             {/* Payment history */}
             {debt.payments.length>0&&(
@@ -843,7 +965,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [pwBusy,setPwBusy]=useState(false);
     const [pwMsg,setPwMsg]=useState<{ok:boolean;text:string}|null>(null);
     const save=async()=>{
-      const next={currency:cur,name};
+      const next={...settings,currency:cur,name};
       setSettings(next);
       setSaved(true);setTimeout(()=>setSaved(false),2500);
       try{await db.upsertSettings(userId,next);}catch(err){console.error(err);window.alert("Couldn't save settings. Please try again.");}
@@ -869,47 +991,59 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           ...txs.map(t=>db.deleteTx(t.id)),
           ...monthly.map(m=>db.deleteMonthly(m.id)),
           ...debts.map(d=>db.deleteDebt(d.id)),
+          ...accounts.map(a=>db.deleteAccount(a.id)),
         ]);
-        setTxs([]);setMonthly([]);setDebts([]);
+        setTxs([]);setMonthly([]);setDebts([]);setAccounts([]);
       }catch(err){console.error(err);window.alert("Couldn't delete everything. Please try again.");}
     };
+    const accountUsage=(a:Account)=>{
+      const debt=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===a.name.toLowerCase());
+      const used=debt?debt.totalAmount-debt.payments.reduce((s,p)=>s+p.amount,0):0;
+      return {used,available:a.creditLimit!=null?a.creditLimit-used:undefined};
+    };
     return(
-      <div style={{padding:"22px 16px",display:"flex",flexDirection:"column",gap:20}}>
-        <div>
-          <div style={{fontSize:26,fontWeight:900,color:D.t1,letterSpacing:"-0.03em",marginBottom:4}}>Settings</div>
-          <div style={{fontSize:13,color:D.t2}}>Configure your Finance OS</div>
-        </div>
-        <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20,display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{padding:"22px 16px",display:"flex",flexDirection:"column",gap:30}}>
+        <PageHeader title="Settings" sub="Manage your profile and accounts"/>
+
+        {/* Profile */}
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:15,fontWeight:700,color:D.t1}}>Profile</div>
           <Inp label="Your Name" val={name} onChange={setName} placeholder="Ahmad"/>
           <Sel label="Default Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
-          <div style={{padding:"14px 16px",background:D.amberDim,border:`1px solid ${D.amber}33`,borderRadius:14}}>
-            <div style={{fontSize:13,color:D.amber,lineHeight:1.6}}>
-              Your Company Cut is no longer a fixed %. Set how much of each transaction is yours right when you add company income or an expense you covered.
-            </div>
+          <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Your Company Cut is set per-transaction, not a fixed %. Adjust it when adding company income or an expense you covered.</div>
+          <PrimaryBtn label={saved?"Saved":"Save Settings"} onClick={save} color={saved?D.teal:D.gold} icon={saved?IC.check:undefined}/>
+        </div>
+
+        {/* Payment Accounts */}
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontSize:15,fontWeight:700,color:D.t1}}>Payment Accounts</div>
+            <button onClick={()=>openSheet("add_account")} style={{background:"none",border:"none",cursor:"pointer",color:D.gold,display:"flex",alignItems:"center",gap:4,fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+              <G d={IC.plus} s={13} c={D.gold}/>Add
+            </button>
           </div>
+          {accounts.length===0
+            ?<div style={{fontSize:13,color:D.t2}}>Add your banks, credit cards, or crypto wallets to pick them fast when logging expenses.</div>
+            :<div style={{display:"flex",gap:12,overflowX:"auto" as const,paddingBottom:4}}>
+              {accounts.map(a=><AccountCard key={a.id} account={a} usage={accountUsage(a)} onDelete={()=>delAccount(a.id)}/>)}
+            </div>}
         </div>
-        <button onClick={save} style={{padding:"15px",background:saved?D.tealDim:D.indigo,border:saved?`1px solid ${D.teal}`:"none",borderRadius:12,color:saved?D.teal:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"opacity .15s",fontFamily:"inherit"}}>
-          {saved?<><G d={IC.check} s={16} c={D.teal}/>Saved!</>:"Save Settings"}
-        </button>
-        <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20}}>
-          <div style={{fontSize:11,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:16}}>Your Data</div>
-          {[{l:"Transactions",v:txs.length},{l:"Monthly Expenses",v:monthly.length},{l:"Debts",v:debts.length}].map(row=>(
-            <div key={row.l} style={{display:"flex",justifyContent:"space-between",padding:"11px 0",borderBottom:`1px solid ${D.b0}`}}>
-              <span style={{fontSize:13,color:D.t2}}>{row.l}</span>
-              <span style={{fontSize:14,fontWeight:700,color:D.t1}}>{row.v}</span>
-            </div>
-          ))}
-          <button onClick={clearAllData}
-            style={{width:"100%",padding:"13px",background:D.roseDim,border:`1px solid ${D.rose}44`,borderRadius:14,color:D.rose,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:16,fontFamily:"inherit"}}>
-            Clear All Data
-          </button>
-        </div>
-        <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20,display:"flex",flexDirection:"column",gap:12}}>
-          <div style={{fontSize:11,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const}}>Change Password</div>
+
+        {/* Change Password */}
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:15,fontWeight:700,color:D.t1}}>Change Password</div>
           <Inp label="New Password" type="password" val={newPw} onChange={setNewPw} placeholder="At least 6 characters"/>
           {pwMsg&&<div style={{fontSize:13,color:pwMsg.ok?D.teal:D.rose,background:pwMsg.ok?D.tealDim:D.roseDim,border:`1px solid ${pwMsg.ok?D.teal:D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{pwMsg.text}</div>}
           <GhostBtn label={pwBusy?"Updating…":"Update Password"} onClick={changePassword}/>
         </div>
+
+        {/* Data */}
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:15,fontWeight:700,color:D.t1}}>Your Data</div>
+          <div style={{fontSize:13,color:D.t2}}>{txs.length} transactions · {monthly.length} monthly · {debts.length} debts</div>
+          <GhostBtn label="Clear All Data" onClick={clearAllData} color={D.rose}/>
+        </div>
+
         <button onClick={onSignOut} style={{width:"100%",padding:"15px",background:"transparent",border:`1px solid ${D.b1}`,borderRadius:12,color:D.t2,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
           Sign Out
         </button>
@@ -920,7 +1054,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 
   // ── BOTTOM NAV ─────────────────────────────────────────────────
   const navItems=[
-    {id:"home",l:"Home",icon:IC.home,c:D.indigo},
+    {id:"home",l:"Home",icon:IC.home,c:D.gold},
     {id:"company",l:"Company",icon:IC.company,c:D.teal},
     {id:"personal",l:"Personal",icon:IC.personal,c:D.violet},
     {id:"debts",l:"Debts",icon:IC.debt,c:D.rose},
@@ -933,6 +1067,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     company_monthly:{title:"Add Monthly Company Cost"},personal_in:{title:"Add Personal Income"},
     personal_out:{title:"Add Daily Expense"},personal_monthly:{title:"Add Monthly Personal Expense"},
     add_debt:{title:"Add Debt / Loan",tall:true},pay_debt:{title:`Pay — ${sheet.debt?.personBank||""}`},
+    add_account:{title:"Add Payment Account"},
   };
 
   const sheetBody=()=>{
@@ -940,9 +1075,10 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     if(!sheet.open)return null;
     if(k==="add_debt")return<AddDebtForm onAdd={addDebt} onClose={closeSheet} defCur={settings.currency}/>;
     if(k==="pay_debt"&&sheet.debt)return<PayForm debt={sheet.debt} onPay={(n,note,date)=>payDebt(sheet.debt!.id,n,note,date)} onClose={closeSheet}/>;
-    if(k==="company_monthly")return<AddMonthlyForm scope="company" onAdd={addMonthly} onClose={closeSheet} defCur={settings.currency}/>;
-    if(k==="personal_monthly")return<AddMonthlyForm scope="personal" onAdd={addMonthly} onClose={closeSheet} defCur={settings.currency}/>;
-    if(["company_in","company_out","personal_in","personal_out"].includes(k))return<AddTxForm type={k as TxType} onAdd={addTx} onClose={closeSheet} defCur={settings.currency}/>;
+    if(k==="add_account")return<AddAccountForm onAdd={addAccount} onClose={closeSheet} defCur={settings.currency}/>;
+    if(k==="company_monthly")return<AddMonthlyForm scope="company" onAdd={addMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts}/>;
+    if(k==="personal_monthly")return<AddMonthlyForm scope="personal" onAdd={addMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts}/>;
+    if(["company_in","company_out","personal_in","personal_out"].includes(k))return<AddTxForm type={k as TxType} onAdd={addTx} onClose={closeSheet} defCur={settings.currency} accounts={accounts}/>;
     return null;
   };
 
@@ -1014,7 +1150,7 @@ const LoginScreen=()=>{
     <div className={font.className} style={{background:D.bg,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,color:D.t1}}>
       <div style={{width:"100%",maxWidth:360}}>
         <div style={{textAlign:"center" as const,marginBottom:32}}>
-          <div style={{width:56,height:56,borderRadius:16,background:D.indigo,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+          <div style={{width:56,height:56,borderRadius:16,background:D.gold,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
             <G d={IC.trend} s={26} c="#fff"/>
           </div>
           <div style={{fontSize:22,fontWeight:800,letterSpacing:"-0.02em"}}>Finance OS</div>

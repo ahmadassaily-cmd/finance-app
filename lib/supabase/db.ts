@@ -1,5 +1,5 @@
 import { supabase } from "./client";
-import type { Tx, Monthly, Debt, DebtPayment, Settings } from "../types";
+import type { Tx, Monthly, Debt, DebtPayment, Settings, Account } from "../types";
 
 function rowToTx(r: Record<string, unknown>): Tx {
   return {
@@ -13,8 +13,7 @@ function rowToTx(r: Record<string, unknown>): Tx {
     currency: r.currency as string,
     createdAt: r.created_at as string,
     myShare: r.my_share != null ? Number(r.my_share) : undefined,
-    payment: (r.payment as Tx["payment"]) ?? undefined,
-    card: (r.card as string) ?? undefined,
+    accountId: (r.account_id as string) ?? undefined,
   };
 }
 
@@ -29,6 +28,18 @@ function rowToMonthly(r: Record<string, unknown>): Monthly {
     category: r.category as string,
     notes: (r.notes as string) ?? undefined,
     active: r.active as boolean,
+    createdAt: r.created_at as string,
+    accountId: (r.account_id as string) ?? undefined,
+  };
+}
+
+function rowToAccount(r: Record<string, unknown>): Account {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    kind: r.kind as Account["kind"],
+    creditLimit: r.credit_limit != null ? Number(r.credit_limit) : undefined,
+    currency: r.currency as string,
     createdAt: r.created_at as string,
   };
 }
@@ -57,18 +68,20 @@ function rowToDebt(r: Record<string, unknown>, payments: DebtPayment[]): Debt {
 }
 
 export async function fetchAll(userId: string) {
-  const [txRes, monRes, debtRes, payRes, setRes] = await Promise.all([
+  const [txRes, monRes, debtRes, payRes, setRes, acctRes] = await Promise.all([
     supabase.from("transactions").select("*").eq("user_id", userId).order("date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("monthly_expenses").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
     supabase.from("debts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
     supabase.from("debt_payments").select("*").eq("user_id", userId),
     supabase.from("settings").select("*").eq("user_id", userId).maybeSingle(),
+    supabase.from("accounts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
   ]);
   if (txRes.error) throw txRes.error;
   if (monRes.error) throw monRes.error;
   if (debtRes.error) throw debtRes.error;
   if (payRes.error) throw payRes.error;
   if (setRes.error) throw setRes.error;
+  if (acctRes.error) throw acctRes.error;
 
   const paymentsByDebt = new Map<string, DebtPayment[]>();
   for (const row of payRes.data ?? []) {
@@ -83,14 +96,15 @@ export async function fetchAll(userId: string) {
   );
 
   const settings: Settings = setRes.data
-    ? { currency: setRes.data.currency as string, name: setRes.data.name as string }
-    : { currency: "USD", name: "" };
+    ? { currency: setRes.data.currency as string, name: setRes.data.name as string, savings: Number(setRes.data.savings ?? 0) }
+    : { currency: "USD", name: "", savings: 0 };
 
   return {
     txs: (txRes.data ?? []).map(rowToTx),
     monthly: (monRes.data ?? []).map(rowToMonthly),
     debts,
     settings,
+    accounts: (acctRes.data ?? []).map(rowToAccount),
   };
 }
 
@@ -107,8 +121,7 @@ export async function insertTx(userId: string, t: Omit<Tx, "id" | "createdAt">):
       notes: t.notes ?? null,
       currency: t.currency,
       my_share: t.myShare ?? null,
-      payment: t.payment ?? null,
-      card: t.card ?? null,
+      account_id: t.accountId ?? null,
     })
     .select()
     .single();
@@ -134,6 +147,7 @@ export async function insertMonthly(userId: string, m: Omit<Monthly, "id" | "cre
       category: m.category,
       notes: m.notes ?? null,
       active: m.active,
+      account_id: m.accountId ?? null,
     })
     .select()
     .single();
@@ -192,6 +206,21 @@ export async function insertDebtPayment(userId: string, debtId: string, amount: 
 export async function upsertSettings(userId: string, s: Settings) {
   const { error } = await supabase
     .from("settings")
-    .upsert({ user_id: userId, currency: s.currency, name: s.name }, { onConflict: "user_id" });
+    .upsert({ user_id: userId, currency: s.currency, name: s.name, savings: s.savings }, { onConflict: "user_id" });
+  if (error) throw error;
+}
+
+export async function insertAccount(userId: string, a: Omit<Account, "id" | "createdAt">): Promise<Account> {
+  const { data, error } = await supabase
+    .from("accounts")
+    .insert({ user_id: userId, name: a.name, kind: a.kind, credit_limit: a.creditLimit ?? null, currency: a.currency })
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToAccount(data);
+}
+
+export async function deleteAccount(id: string) {
+  const { error } = await supabase.from("accounts").delete().eq("id", id);
   if (error) throw error;
 }
