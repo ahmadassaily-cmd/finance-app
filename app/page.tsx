@@ -985,16 +985,26 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   // ── SETTINGS ───────────────────────────────────────────────────
   const SettingsTab=()=>{
     const [name,setName]=useState(settings.name);
+    const [username,setUsername]=useState(settings.username||"");
     const [cur,setCur]=useState(settings.currency);
     const [saved,setSaved]=useState(false);
+    const [saveErr,setSaveErr]=useState("");
     const [newPw,setNewPw]=useState("");
     const [pwBusy,setPwBusy]=useState(false);
     const [pwMsg,setPwMsg]=useState<{ok:boolean;text:string}|null>(null);
     const save=async()=>{
-      const next={...settings,currency:cur,name};
-      setSettings(next);
-      setSaved(true);setTimeout(()=>setSaved(false),2500);
-      try{await db.upsertSettings(userId,next);}catch(err){console.error(err);window.alert("Couldn't save settings. Please try again.");}
+      setSaveErr("");
+      const cleanUsername=username.trim().toLowerCase().replace(/[^a-z0-9_.]/g,"");
+      const next={...settings,currency:cur,name,username:cleanUsername||undefined};
+      try{
+        await db.upsertSettings(userId,next);
+        setSettings(next);
+        setUsername(cleanUsername);
+        setSaved(true);setTimeout(()=>setSaved(false),2500);
+      }catch(err){
+        console.error(err);
+        setSaveErr(err instanceof Error&&err.message.includes("duplicate")?"That username is already taken.":"Couldn't save settings. Please try again.");
+      }
     };
     const changePassword=async()=>{
       if(newPw.length<6){setPwMsg({ok:false,text:"Password must be at least 6 characters."});return;}
@@ -1035,8 +1045,10 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{fontSize:15,fontWeight:700,color:D.t1}}>Profile</div>
           <Inp label="Your Name" val={name} onChange={setName} placeholder="Ahmad"/>
+          <Inp label="Username (sign in with this instead of email)" val={username} onChange={setUsername} placeholder="e.g. ahmad"/>
           <Sel label="Default Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
           <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Your Company Cut is set per-transaction, not a fixed %. Adjust it when adding company income or an expense you covered.</div>
+          {saveErr&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{saveErr}</div>}
           <PrimaryBtn label={saved?"Saved":"Save Settings"} onClick={save} color={saved?D.teal:D.gold} icon={saved?IC.check:undefined}/>
         </div>
 
@@ -1183,17 +1195,23 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 
 // ── AUTH ───────────────────────────────────────────────────────────────────────
 const LoginScreen=()=>{
-  const [email,setEmail]=useState("");
+  const [identifier,setIdentifier]=useState("");
   const [password,setPassword]=useState("");
   const [remember,setRemember]=useState(true);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
-  const ok=!!email&&!!password;
+  const ok=!!identifier&&!!password;
 
   const submit=async()=>{
     if(!ok||busy)return;
     setBusy(true);setError("");
     try{
+      let email=identifier.trim();
+      if(!email.includes("@")){
+        const resolved=await db.resolveUsernameEmail(email);
+        if(!resolved)throw new Error("Invalid login credentials");
+        email=resolved;
+      }
       setRememberMe(remember);
       const {error}=await supabase.auth.signInWithPassword({email,password});
       if(error)throw error;
@@ -1215,7 +1233,7 @@ const LoginScreen=()=>{
           <div style={{fontSize:13,color:D.t2,marginTop:4}}>Sign in to your account</div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:16}}>
-          <Inp label="Email" type="email" val={email} onChange={setEmail} placeholder="you@example.com" autoFocus/>
+          <Inp label="Username" val={identifier} onChange={setIdentifier} placeholder="ahmad" autoFocus/>
           <Inp label="Password" type="password" val={password} onChange={setPassword} placeholder="Your password"/>
           <button type="button" onClick={()=>setRemember(r=>!r)} style={{display:"flex",alignItems:"center",gap:9,background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>
             <div style={{width:19,height:19,borderRadius:6,background:remember?D.gold:"transparent",border:`1.5px solid ${remember?D.gold:D.b2}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>

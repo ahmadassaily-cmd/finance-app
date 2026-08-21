@@ -96,7 +96,7 @@ export async function fetchAll(userId: string) {
   );
 
   const settings: Settings = setRes.data
-    ? { currency: setRes.data.currency as string, name: setRes.data.name as string, savings: Number(setRes.data.savings ?? 0) }
+    ? { currency: setRes.data.currency as string, name: setRes.data.name as string, savings: Number(setRes.data.savings ?? 0), username: (setRes.data.username as string) ?? undefined }
     : { currency: "USD", name: "", savings: 0 };
 
   return {
@@ -206,8 +206,14 @@ export async function insertDebtPayment(userId: string, debtId: string, amount: 
 export async function upsertSettings(userId: string, s: Settings) {
   const { error } = await supabase
     .from("settings")
-    .upsert({ user_id: userId, currency: s.currency, name: s.name, savings: s.savings }, { onConflict: "user_id" });
+    .upsert({ user_id: userId, currency: s.currency, name: s.name, savings: s.savings, username: s.username || null }, { onConflict: "user_id" });
   if (error) throw error;
+}
+
+export async function resolveUsernameEmail(username: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc("resolve_username_email", { p_username: username });
+  if (error) throw error;
+  return (data as string | null) ?? null;
 }
 
 export async function insertAccount(userId: string, a: Omit<Account, "id" | "createdAt">): Promise<Account> {
