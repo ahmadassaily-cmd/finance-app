@@ -246,7 +246,7 @@ const Sheet=({open,onClose,title,children,tall}:{open:boolean;onClose:()=>void;t
 };
 
 // ── FORM FIELDS ────────────────────────────────────────────────────────────────
-const Inp=({label,type="text",val,onChange,placeholder,min,max,autoFocus}:{label:string;type?:string;val:string;onChange:(v:string)=>void;placeholder?:string;min?:string;max?:string;autoFocus?:boolean})=>{
+const Inp=({label,type="text",val,onChange,placeholder,min,max,autoFocus,hint}:{label:string;type?:string;val:string;onChange:(v:string)=>void;placeholder?:string;min?:string;max?:string;autoFocus?:boolean;hint?:string})=>{
   const [reveal,setReveal]=useState(false);
   const isPw=type==="password";
   return(
@@ -265,6 +265,7 @@ const Inp=({label,type="text",val,onChange,placeholder,min,max,autoFocus}:{label
           </button>
         )}
       </div>
+      {hint&&<div style={{fontSize:11,color:D.t3,marginTop:6,lineHeight:1.4}}>{hint}</div>}
     </div>
   );
 };
@@ -546,12 +547,8 @@ const AddAccountForm=({editing,onAdd,onEdit,onClose,defCur}:{editing?:Account;on
   const handle=()=>{
     if(!ok)return;
     const a:Account={id:editing?.id||uid(),name,kind,currency:cur,createdAt:editing?.createdAt||new Date().toISOString()};
-    if(kind==="credit_card"){
-      if(limit)a.creditLimit=parseFloat(limit)||undefined;
-    }else{
-      a.balance=balance?parseFloat(balance)||0:0;
-      if(limit)a.creditLimit=parseFloat(limit)||undefined;
-    }
+    a.balance=balance?parseFloat(balance)||0:0;
+    if(limit)a.creditLimit=parseFloat(limit)||undefined;
     if(editing&&onEdit)onEdit(editing,a);else onAdd(a);
     onClose();
   };
@@ -563,12 +560,9 @@ const AddAccountForm=({editing,onAdd,onEdit,onClose,defCur}:{editing?:Account;on
         {ACCOUNT_KINDS.map(k=><Chip key={k.v} label={k.l} active={kind===k.v} color={D.gold} onClick={()=>setKind(k.v)}/>)}
       </div>
     </div>
-    {kind==="credit_card"
-      ?<Inp label="Credit Limit (optional)" type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>
-      :<>
-        <Inp label="Current Balance" type="number" val={balance} onChange={setBalance} placeholder={`${sym(cur)} 0.00`}/>
-        <Inp label="Limit (optional)" type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>
-      </>}
+    <Inp label="Current Balance" type="number" val={balance} onChange={setBalance} placeholder={`${sym(cur)} 0.00`}
+      hint={kind==="credit_card"?"Enter as negative if you currently owe money on this card — it'll show up in Debts automatically.":undefined}/>
+    <Inp label={kind==="credit_card"?"Credit Limit (optional)":"Limit (optional)"} type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     <PrimaryBtn label={editing?"Save Changes":"Add Account"} onClick={handle} color={D.gold} disabled={!ok}/>
   </>);
@@ -717,20 +711,40 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     });
   },[]);
 
+  // Keeps a credit card's linked "Credit Card Spending" debt in sync with its manually-entered balance
+  // (negative balance = amount owed; remaining owed is kept equal to that amount, on top of any payments already recorded)
+  const syncCardDebt=useCallback(async(account:Account)=>{
+    const owed=Math.max(0,-(account.balance||0));
+    const existing=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===account.name.toLowerCase());
+    if(existing){
+      const paidSoFar=existing.payments.reduce((s,p)=>s+p.amount,0);
+      const newTotal=owed+paidSoFar;
+      if(newTotal!==existing.totalAmount){
+        await db.setDebtTotal(existing.id,newTotal);
+        setDebts(p=>p.map(d=>d.id===existing.id?{...d,totalAmount:newTotal}:d));
+      }
+    }else if(owed>0){
+      const newDebt=await db.insertDebt(userId,{personBank:account.name,totalAmount:owed,currency:account.currency,description:"Credit Card Spending"});
+      setDebts(p=>[newDebt,...p]);
+    }
+  },[debts,userId]);
+
   const addAccount=useCallback(async(a:Account)=>{
     try{
       const saved=await db.insertAccount(userId,{name:a.name,kind:a.kind,creditLimit:a.creditLimit,balance:a.balance,currency:a.currency});
       setAccounts(p=>[saved,...p]);
+      if(saved.kind==="credit_card")await syncCardDebt(saved);
       showToast("Account added");
     }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
-  },[userId,showToast]);
+  },[userId,showToast,syncCardDebt]);
   const updateAccount=useCallback(async(original:Account,edited:Account)=>{
     try{
       const saved=await db.updateAccount(original.id,{name:edited.name,kind:edited.kind,creditLimit:edited.creditLimit,balance:edited.balance,currency:edited.currency});
       setAccounts(p=>p.map(a=>a.id===saved.id?saved:a));
+      if(saved.kind==="credit_card")await syncCardDebt(saved);
       showToast("Changes saved");
     }catch(err){console.error(err);window.alert("Couldn't save changes. Please try again.");}
-  },[showToast]);
+  },[showToast,syncCardDebt]);
   const delAccount=useCallback((id:string)=>{
     setAccounts(p=>p.filter(a=>a.id!==id));
     db.deleteAccount(id).catch(err=>console.error(err));
@@ -792,6 +806,10 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const totalDebtPaid=debts.reduce((s,d)=>s+toBase(d.payments.reduce((ss,p)=>ss+p.amount,0),d.currency),0);
   const totalDebtOrig=debts.reduce((s,d)=>s+toBase(d.totalAmount,d.currency),0);
   const netPos=myCut+perIn-perOut-totalDebtLeft+(settings.savings||0);
+  const bankMoney=accounts.filter(a=>a.kind==="bank").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
+  const creditMoney=accounts.filter(a=>a.kind==="credit_card").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
+  const cryptoMoney=accounts.filter(a=>a.kind==="crypto").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
+  const totalAccountsMoney=bankMoney+creditMoney+cryptoMoney;
 
   // This month
   const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
@@ -848,6 +866,26 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
       )}
 
       <div style={{padding:"22px 16px 20px",display:"flex",flexDirection:"column",gap:20}}>
+        {/* Total money */}
+        {accounts.length>0&&(
+          <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20}}>
+            <div style={{fontSize:11,fontWeight:700,color:D.t2,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:6}}>Total Money</div>
+            <div style={{fontSize:30,fontWeight:900,color:totalAccountsMoney>=0?D.t1:D.rose,fontVariantNumeric:"tabular-nums",marginBottom:16}}>{totalAccountsMoney<0?"-":""}{money(Math.abs(totalAccountsMoney),S,true)}</div>
+            {[
+              {l:"Banks",v:bankMoney,c:D.t1},
+              {l:"Credit Cards",v:creditMoney,c:creditMoney<0?D.rose:D.t1},
+              {l:"Crypto Wallets",v:cryptoMoney,c:D.t1},
+              {l:"Savings",v:settings.savings||0,c:D.gold},
+              {l:"Company Income (My Cut)",v:myCut,c:D.gold},
+            ].map((row,i)=>(
+              <div key={row.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:i<4?`1px solid ${D.b0}`:"none"}}>
+                <span style={{fontSize:13,color:D.t2}}>{row.l}</span>
+                <span style={{fontSize:14,fontWeight:800,color:row.c,fontVariantNumeric:"tabular-nums"}}>{row.v<0?"-":""}{money(Math.abs(row.v),S,true)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* This month */}
         <div style={{fontSize:11,fontWeight:700,color:D.t3,letterSpacing:"0.1em",textTransform:"uppercase" as const}}>{MO[cm]} {cy}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
