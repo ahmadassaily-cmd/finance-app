@@ -784,8 +784,9 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const isCreditTx=(t:Tx)=>accounts.find(a=>a.id===t.accountId)?.kind==="credit_card";
   const perIn=txs.filter(t=>t.type==="personal_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const perOut=txs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
-  const perMonthly=monthly.filter(m=>m.scope==="personal"&&m.active);
-  const perMonthlyTotal=perMonthly.reduce((s,m)=>s+toBase(m.amount,m.currency),0);
+  const perMonthlyActive=monthly.filter(m=>m.scope==="personal"&&m.active);
+  const perMonthlyTotal=perMonthlyActive.reduce((s,m)=>s+toBase(m.amount,m.currency),0);
+  const perMonthly=monthly.filter(m=>m.scope==="personal");
   const debtRemaining=(d:Debt)=>d.totalAmount-d.payments.reduce((s,p)=>s+p.amount,0);
   const totalDebtLeft=debts.reduce((s,d)=>s+toBase(Math.max(0,debtRemaining(d)),d.currency),0);
   const totalDebtPaid=debts.reduce((s,d)=>s+toBase(d.payments.reduce((ss,p)=>ss+p.amount,0),d.currency),0);
