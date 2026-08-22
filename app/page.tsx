@@ -726,32 +726,40 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   },[userId,showToast]);
 
   // ── Derived numbers
-  const compIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+t.amount,0);
-  const compOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+t.amount,0);
+  // Converts an amount in `currency` into the account's base currency (settings.currency),
+  // using the manual USD/TRY rate from Settings. Any other currency pair is left unconverted.
+  const toBase=(amount:number,currency:string)=>{
+    if(currency===settings.currency)return amount;
+    if(currency==="USD"&&settings.currency==="TRY")return settings.usdTryRate?amount*settings.usdTryRate:amount;
+    if(currency==="TRY"&&settings.currency==="USD")return settings.usdTryRate?amount/settings.usdTryRate:amount;
+    return amount;
+  };
+  const compIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const compOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const compMonthlyActive=monthly.filter(m=>m.scope==="company"&&m.active);
-  const compMonthlyTotal=compMonthlyActive.reduce((s,m)=>s+m.amount,0);
+  const compMonthlyTotal=compMonthlyActive.reduce((s,m)=>s+toBase(m.amount,m.currency),0);
   const compProfit=compIn-compOut;
-  const myCutIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+(t.myShare||0),0);
-  const myCutOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+(t.myShare||0),0);
+  const myCutIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
+  const myCutOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
   const myCut=myCutIn-myCutOut;
   const isCreditTx=(t:Tx)=>accounts.find(a=>a.id===t.accountId)?.kind==="credit_card";
-  const perIn=txs.filter(t=>t.type==="personal_in").reduce((s,t)=>s+t.amount,0);
-  const perOut=txs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+t.amount,0);
+  const perIn=txs.filter(t=>t.type==="personal_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const perOut=txs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const perMonthly=monthly.filter(m=>m.scope==="personal"&&m.active);
-  const perMonthlyTotal=perMonthly.reduce((s,m)=>s+m.amount,0);
+  const perMonthlyTotal=perMonthly.reduce((s,m)=>s+toBase(m.amount,m.currency),0);
   const debtRemaining=(d:Debt)=>d.totalAmount-d.payments.reduce((s,p)=>s+p.amount,0);
-  const totalDebtLeft=debts.reduce((s,d)=>s+Math.max(0,debtRemaining(d)),0);
-  const totalDebtPaid=debts.reduce((s,d)=>s+d.payments.reduce((ss,p)=>ss+p.amount,0),0);
-  const totalDebtOrig=debts.reduce((s,d)=>s+d.totalAmount,0);
-  const netPos=myCut+perIn-perOut-totalDebtLeft;
+  const totalDebtLeft=debts.reduce((s,d)=>s+toBase(Math.max(0,debtRemaining(d)),d.currency),0);
+  const totalDebtPaid=debts.reduce((s,d)=>s+toBase(d.payments.reduce((ss,p)=>ss+p.amount,0),d.currency),0);
+  const totalDebtOrig=debts.reduce((s,d)=>s+toBase(d.totalAmount,d.currency),0);
+  const netPos=myCut+perIn-perOut-totalDebtLeft+(settings.savings||0);
 
   // This month
   const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
   const mTxs=txs.filter(t=>{const d=new Date(t.date);return d.getMonth()===cm&&d.getFullYear()===cy;});
-  const mCompIn=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+t.amount,0);
-  const mCompOut=mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+t.amount,0);
-  const mMyCut=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+(t.myShare||0),0)-mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+(t.myShare||0),0);
-  const mPerOut=mTxs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+t.amount,0);
+  const mCompIn=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const mCompOut=mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const mMyCut=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0)-mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
+  const mPerOut=mTxs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
 
   const upcomingMonthly=monthly.filter(m=>m.active).map(m=>({...m,daysUntil:daysUntilDueDay(m.dueDay)})).sort((a,b)=>a.daysUntil-b.daysUntil);
   const dueSoonCount=upcomingMonthly.filter(m=>m.daysUntil<=7).length;
@@ -778,8 +786,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         <div style={{fontSize:48,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1,marginBottom:22,fontVariantNumeric:"tabular-nums",color:D.t1}}>
           {netPos>=0?"+":"-"}{money(Math.abs(netPos),S,true)}
         </div>
-        <div style={{display:"flex",gap:24}}>
-          {[{l:"My Cut",v:money(myCut,S,true),c:D.gold},{l:"Personal",v:money(perIn-perOut,S,true),c:perIn-perOut>=0?D.teal:D.rose},{l:"Debts Left",v:money(totalDebtLeft,S,true),c:D.rose}].map(s=>(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",rowGap:16,columnGap:24}}>
+          {[{l:"My Cut",v:money(myCut,S,true),c:D.gold},{l:"Savings",v:money(settings.savings||0,S,true),c:D.gold},{l:"Personal",v:money(perIn-perOut,S,true),c:perIn-perOut>=0?D.teal:D.rose},{l:"Debts Left",v:money(totalDebtLeft,S,true),c:D.rose}].map(s=>(
             <div key={s.l}><div style={{fontSize:11,color:D.t3,marginBottom:4}}>{s.l}</div><div style={{fontSize:15,fontWeight:800,color:s.c,fontVariantNumeric:"tabular-nums"}}>{s.v}</div></div>
           ))}
         </div>
@@ -1164,6 +1172,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [name,setName]=useState(settings.name);
     const [username,setUsername]=useState(settings.username||"");
     const [cur,setCur]=useState(settings.currency);
+    const [rate,setRate]=useState(settings.usdTryRate!=null?String(settings.usdTryRate):"");
     const [saved,setSaved]=useState(false);
     const [saveErr,setSaveErr]=useState("");
     const [email,setEmail]=useState("");
@@ -1202,7 +1211,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const save=async()=>{
       setSaveErr("");
       const cleanUsername=username.trim().toLowerCase().replace(/[^a-z0-9_.]/g,"");
-      const next={...settings,currency:cur,name,username:cleanUsername||undefined};
+      const next={...settings,currency:cur,name,username:cleanUsername||undefined,usdTryRate:rate?parseFloat(rate)||undefined:undefined};
       try{
         await db.upsertSettings(userId,next);
         setSettings(next);
@@ -1266,6 +1275,14 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           <Inp label="Username (sign in with this instead of email)" val={username} onChange={setUsername} placeholder="e.g. ahmad"/>
           <Sel label="Default Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
           <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Your Company Cut is set per-transaction, not a fixed %. Adjust it when adding company income or an expense you covered.</div>
+          {saveErr&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{saveErr}</div>}
+          <PrimaryBtn label={saved?"Saved":"Save Settings"} onClick={save} color={saved?D.teal:D.gold} icon={saved?IC.check:undefined}/>
+        </SectionCard>
+
+        {/* Exchange Rate */}
+        <SectionCard icon={IC.coin} title="Exchange Rate">
+          <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Your default currency is {settings.currency}. Set how many Turkish Lira one US Dollar is worth, so totals mixing USD and TRY add up correctly. Update it anytime rates change.</div>
+          <Inp label="1 USD = ? TRY" type="number" val={rate} onChange={setRate} placeholder="e.g. 34.50"/>
           {saveErr&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{saveErr}</div>}
           <PrimaryBtn label={saved?"Saved":"Save Settings"} onClick={save} color={saved?D.teal:D.gold} icon={saved?IC.check:undefined}/>
         </SectionCard>
