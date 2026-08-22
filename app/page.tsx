@@ -1217,6 +1217,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         setSettings(next);
         setUsername(cleanUsername);
         setSaved(true);setTimeout(()=>setSaved(false),2500);
+        showToast("Settings saved");
       }catch(err){
         console.error(err);
         setSaveErr(err instanceof Error&&err.message.includes("duplicate")?"That username is already taken.":"Couldn't save settings. Please try again.");
@@ -1282,7 +1283,16 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         {/* Exchange Rate */}
         <SectionCard icon={IC.coin} title="Exchange Rate">
           <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Your default currency is {settings.currency}. Set how many Turkish Lira one US Dollar is worth, so totals mixing USD and TRY add up correctly. Update it anytime rates change.</div>
+          <div style={{fontSize:11,color:D.t3}}>
+            Currently saved: {settings.usdTryRate!=null?`1 USD = ${settings.usdTryRate} TRY`:"not set yet"}
+          </div>
           <Inp label="1 USD = ? TRY" type="number" val={rate} onChange={setRate} placeholder="e.g. 34.50"/>
+          {!!rate&&parseFloat(rate)>0&&(
+            <div style={{padding:"12px 16px",background:D.goldDim,border:`1px solid ${D.gold}33`,borderRadius:12}}>
+              <div style={{fontSize:13,color:D.gold,fontWeight:700}}>Preview: $1 = ₺{parseFloat(rate).toFixed(2)}</div>
+              <div style={{fontSize:12,color:D.t2,marginTop:2}}>e.g. $100 = ₺{(parseFloat(rate)*100).toFixed(2)}</div>
+            </div>
+          )}
           {saveErr&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{saveErr}</div>}
           <PrimaryBtn label={saved?"Saved":"Save Settings"} onClick={save} color={saved?D.teal:D.gold} icon={saved?IC.check:undefined}/>
         </SectionCard>
