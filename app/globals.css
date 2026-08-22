@@ -24,3 +24,20 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+button {
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, opacity .12s ease;
+}
+button:active:not(:disabled) {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+@keyframes finPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .55; transform: scale(.94); }
+}
+.fin-loading-mark {
+  animation: finPulse 1.4s ease-in-out infinite;
+}

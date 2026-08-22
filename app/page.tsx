@@ -5,6 +5,7 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase, setRememberMe } from "@/lib/supabase/client";
 import * as db from "@/lib/supabase/db";
 import type { TxType, Tx, Monthly, Debt, Settings, Account, AccountKind } from "@/lib/types";
+import { FinanceMark } from "./icon-mark";
 
 const font = Inter({ subsets: ["latin"], display: "swap", weight: ["400","500","600","700"] });
 
@@ -51,6 +52,13 @@ const daysUntilDueDay=(dueDay:number)=>{
   if(candidate<today)candidate=new Date(now.getFullYear(),now.getMonth()+1,dueDay);
   return Math.round((candidate.getTime()-today.getTime())/86400000);
 };
+
+const LoadingScreen=({fontFamily}:{fontFamily?:string})=>(
+  <div style={{background:D.bg,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18,fontFamily}}>
+    <div className="fin-loading-mark"><FinanceMark size={64}/></div>
+    <div style={{color:D.t2,fontSize:13,fontWeight:600,letterSpacing:"0.04em"}}>Finance OS</div>
+  </div>
+);
 
 type DateFilter={mode:"all"|"today"|"week"|"month"|"custom";date:string};
 const matchesDateFilter=(dateStr:string,f:DateFilter)=>{
@@ -104,6 +112,7 @@ const IC={
   tag:["M20.59 13.41 12 22l-9-9L11.59 4.41A2 2 0 0 1 13 3.83h6.17A1.83 1.83 0 0 1 21 5.66v6.17a2 2 0 0 1-.41.99z","M15.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"],
   refresh:["M23 4v6h-6","M1 20v-6h6","M3.51 9a9 9 0 0 1 14.85-3.36L23 10","M1 14l4.64 4.36A9 9 0 0 0 20.49 15"],
   filter:["M22 3H2l8 9.46V19l4 2v-8.54z"],
+  chevron:"M9 18l6-6-6-6",
 
 };
 
@@ -171,7 +180,10 @@ const AccountCard=({account,usage,onDelete,onEdit}:{account:Account;usage?:{used
       <div style={{position:"absolute",top:-30,right:-30,width:110,height:110,borderRadius:"50%",background:`radial-gradient(circle, ${D.gold}22 0%, transparent 70%)`,pointerEvents:"none"}}/>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,position:"relative"}}>
         <G d={accountKindIcon(account.kind)} s={20} c={D.gold}/>
-        {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete();}} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:0}}><G d={IC.trash} s={13}/></button>}
+        <div style={{display:"flex",gap:10}}>
+          {onEdit&&<button onClick={e=>{e.stopPropagation();onEdit();}} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:0}}><G d={IC.pencil} s={13}/></button>}
+          {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete();}} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:0}}><G d={IC.trash} s={13}/></button>}
+        </div>
       </div>
       <div style={{fontSize:15,fontWeight:700,color:D.t1,marginBottom:3,whiteSpace:"nowrap" as const,overflow:"hidden",textOverflow:"ellipsis"}}>{account.name}</div>
       <div style={{fontSize:11,color:D.t2,marginBottom:isCredit||account.balance!=null?14:0}}>{accountKindLabel(account.kind)}</div>
@@ -185,7 +197,12 @@ const AccountCard=({account,usage,onDelete,onEdit}:{account:Account;usage?:{used
         </div>
       )}
       {!isCredit&&account.balance!=null&&(
-        <div style={{fontSize:20,fontWeight:800,color:account.balance<0?D.rose:D.t1,fontVariantNumeric:"tabular-nums"}}>{money(account.balance,sym(account.currency),true)}</div>
+        <div>
+          <div style={{fontSize:20,fontWeight:800,color:account.balance<0?D.rose:D.t1,fontVariantNumeric:"tabular-nums"}}>{money(account.balance,sym(account.currency),true)}</div>
+          {account.creditLimit!=null&&(
+            <div style={{fontSize:11,color:D.t3,marginTop:4}}>Limit {money(account.creditLimit,sym(account.currency),true)}</div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -193,11 +210,24 @@ const AccountCard=({account,usage,onDelete,onEdit}:{account:Account;usage?:{used
 
 // ── BOTTOM SHEET ───────────────────────────────────────────────────────────────
 const Sheet=({open,onClose,title,children,tall}:{open:boolean;onClose:()=>void;title:string;children:React.ReactNode;tall?:boolean})=>{
-  if(!open)return null;
+  const [mounted,setMounted]=useState(false);
+  const [entered,setEntered]=useState(false);
+  useEffect(()=>{
+    if(open){
+      setMounted(true);
+      const raf=requestAnimationFrame(()=>setEntered(true));
+      return ()=>cancelAnimationFrame(raf);
+    }else{
+      setEntered(false);
+      const t=setTimeout(()=>setMounted(false),220);
+      return ()=>clearTimeout(t);
+    }
+  },[open]);
+  if(!mounted)return null;
   return(
     <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
-      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
-      <div style={{position:"relative",background:D.s2,borderRadius:"28px 28px 0 0",maxHeight:tall?"95vh":"85vh",display:"flex",flexDirection:"column",border:`1px solid ${D.b2}`,borderBottom:"none",boxShadow:"0 -20px 60px rgba(0,0,0,0.5)"}}>
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",opacity:entered?1:0,transition:"opacity .22s ease"}} onClick={onClose}/>
+      <div style={{position:"relative",background:D.s2,borderRadius:"28px 28px 0 0",maxHeight:tall?"95vh":"85vh",display:"flex",flexDirection:"column",border:`1px solid ${D.b2}`,borderBottom:"none",boxShadow:"0 -20px 60px rgba(0,0,0,0.5)",transform:entered?"translateY(0)":"translateY(100%)",transition:"transform .28s cubic-bezier(.32,.72,0,1)"}}>
         <div style={{display:"flex",justifyContent:"center",padding:"14px 0 0"}}>
           <div style={{width:44,height:4,background:D.b2,borderRadius:4}}/>
         </div>
@@ -351,6 +381,7 @@ const TxRow=({tx,accounts,onDel,onEdit}:{tx:Tx;accounts:Account[];onDel:()=>void
         <div style={{fontSize:15,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums"}}>{isIn?"+":"-"}{money(tx.amount,sym(tx.currency))}</div>
         <button onClick={e=>{e.stopPropagation();onDel();}} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:"3px 0",marginTop:2}}><G d={IC.trash} s={13}/></button>
       </div>
+      <G d={IC.chevron} s={15} c={D.t3} sw={2}/>
     </div>
   );
 };
@@ -385,6 +416,7 @@ const MonthlyRow=({m,accounts,onDel,onToggle,onEdit}:{m:Monthly;accounts:Account
           <button onClick={e=>{e.stopPropagation();onDel();}} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:"2px"}}><G d={IC.trash} s={12}/></button>
         </div>
       </div>
+      <G d={IC.chevron} s={14} c={D.t3} sw={2}/>
     </div>
   );
 };
@@ -514,8 +546,12 @@ const AddAccountForm=({editing,onAdd,onEdit,onClose,defCur}:{editing?:Account;on
   const handle=()=>{
     if(!ok)return;
     const a:Account={id:editing?.id||uid(),name,kind,currency:cur,createdAt:editing?.createdAt||new Date().toISOString()};
-    if(kind==="credit_card"){if(limit)a.creditLimit=parseFloat(limit)||undefined;}
-    else{a.balance=balance?parseFloat(balance)||0:0;}
+    if(kind==="credit_card"){
+      if(limit)a.creditLimit=parseFloat(limit)||undefined;
+    }else{
+      a.balance=balance?parseFloat(balance)||0:0;
+      if(limit)a.creditLimit=parseFloat(limit)||undefined;
+    }
     if(editing&&onEdit)onEdit(editing,a);else onAdd(a);
     onClose();
   };
@@ -529,7 +565,10 @@ const AddAccountForm=({editing,onAdd,onEdit,onClose,defCur}:{editing?:Account;on
     </div>
     {kind==="credit_card"
       ?<Inp label="Credit Limit (optional)" type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>
-      :<Inp label="Current Balance" type="number" val={balance} onChange={setBalance} placeholder={`${sym(cur)} 0.00`}/>}
+      :<>
+        <Inp label="Current Balance" type="number" val={balance} onChange={setBalance} placeholder={`${sym(cur)} 0.00`}/>
+        <Inp label="Limit (optional)" type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>
+      </>}
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     <PrimaryBtn label={editing?"Save Changes":"Add Account"} onClick={handle} color={D.gold} disabled={!ok}/>
   </>);
@@ -773,7 +812,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const openSheet=(key:string,opts?:{debt?:Debt;editTx?:Tx;editMonthly?:Monthly;editDebt?:Debt;editAccount?:Account})=>setSheet({open:true,key,...opts});
   const closeSheet=()=>setSheet({open:false,key:""});
 
-  if(!ready)return<div style={{background:D.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:font.style.fontFamily}}><div style={{color:D.t2}}>Loading…</div></div>;
+  if(!ready)return<LoadingScreen fontFamily={font.style.fontFamily}/>;
 
   // ── HOME ───────────────────────────────────────────────────────
   const HomeTab=()=>(
@@ -1546,7 +1585,7 @@ export default function Page(){
     return ()=>listener.subscription.unsubscribe();
   },[]);
 
-  if(session===undefined)return<div style={{background:D.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{color:D.t2}}>Loading…</div></div>;
+  if(session===undefined)return<LoadingScreen/>;
   if(!session)return<LoginScreen/>;
   return<FinanceApp userId={session.user.id} onSignOut={()=>supabase.auth.signOut()}/>;
 }
