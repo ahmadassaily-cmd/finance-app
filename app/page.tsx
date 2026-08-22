@@ -858,7 +858,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const totalDebtLeft=debts.reduce((s,d)=>s+toBase(Math.max(0,debtRemaining(d)),d.currency),0);
   const totalDebtPaid=debts.reduce((s,d)=>s+toBase(d.payments.reduce((ss,p)=>ss+p.amount,0),d.currency),0);
   const totalDebtOrig=debts.reduce((s,d)=>s+toBase(d.totalAmount,d.currency),0);
-  const netPos=myCut+perIn-perOut-totalDebtLeft+(settings.savings||0);
+  const netPos=myCut+perIn-perOut+(settings.savings||0);
   const bankMoney=accounts.filter(a=>a.kind==="bank").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
   const creditMoney=accounts.filter(a=>a.kind==="credit_card").reduce((s,a)=>s-toBase(a.balance||0,a.currency),0);
   const cryptoMoney=accounts.filter(a=>a.kind==="crypto").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
