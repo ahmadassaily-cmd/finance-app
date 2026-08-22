@@ -154,6 +154,27 @@ export async function deleteTx(id: string) {
   if (error) throw error;
 }
 
+export async function updateTx(id: string, t: Omit<Tx, "id" | "createdAt">): Promise<Tx> {
+  const { data, error } = await supabase
+    .from("transactions")
+    .update({
+      type: t.type,
+      amount: t.amount,
+      description: t.description,
+      category: t.category,
+      date: t.date,
+      notes: t.notes ?? null,
+      currency: t.currency,
+      my_share: t.myShare ?? null,
+      account_id: t.accountId ?? null,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToTx(data);
+}
+
 export async function insertMonthly(userId: string, m: Omit<Monthly, "id" | "createdAt">): Promise<Monthly> {
   const { data, error } = await supabase
     .from("monthly_expenses")
@@ -178,6 +199,27 @@ export async function insertMonthly(userId: string, m: Omit<Monthly, "id" | "cre
 export async function deleteMonthly(id: string) {
   const { error } = await supabase.from("monthly_expenses").delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function updateMonthly(id: string, m: Omit<Monthly, "id" | "createdAt">): Promise<Monthly> {
+  const { data, error } = await supabase
+    .from("monthly_expenses")
+    .update({
+      scope: m.scope,
+      name: m.name,
+      amount: m.amount,
+      currency: m.currency,
+      due_day: m.dueDay,
+      category: m.category,
+      notes: m.notes ?? null,
+      active: m.active,
+      account_id: m.accountId ?? null,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToMonthly(data);
 }
 
 export async function setMonthlyActive(id: string, active: boolean) {
@@ -205,6 +247,21 @@ export async function insertDebt(userId: string, d: Omit<Debt, "id" | "createdAt
 
 export async function deleteDebt(id: string) {
   const { error } = await supabase.from("debts").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateDebt(id: string, d: Omit<Debt, "id" | "createdAt" | "payments">): Promise<void> {
+  const { error } = await supabase
+    .from("debts")
+    .update({
+      person_bank: d.personBank,
+      total_amount: d.totalAmount,
+      currency: d.currency,
+      description: d.description,
+      due_date: d.dueDate ?? null,
+      notes: d.notes ?? null,
+    })
+    .eq("id", id);
   if (error) throw error;
 }
 
@@ -249,6 +306,17 @@ export async function insertAccount(userId: string, a: Omit<Account, "id" | "cre
 export async function deleteAccount(id: string) {
   const { error } = await supabase.from("accounts").delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function updateAccount(id: string, a: Omit<Account, "id" | "createdAt">): Promise<Account> {
+  const { data, error } = await supabase
+    .from("accounts")
+    .update({ name: a.name, kind: a.kind, credit_limit: a.creditLimit ?? null, balance: a.balance ?? null, currency: a.currency })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToAccount(data);
 }
 
 export async function setAccountBalance(id: string, balance: number) {
