@@ -52,6 +52,22 @@ const daysUntilDueDay=(dueDay:number)=>{
   return Math.round((candidate.getTime()-today.getTime())/86400000);
 };
 
+type DateFilter={mode:"all"|"today"|"week"|"month"|"custom";date:string};
+const matchesDateFilter=(dateStr:string,f:DateFilter)=>{
+  if(f.mode==="all")return true;
+  if(f.mode==="custom")return f.date?dateStr===f.date:true;
+  const d=new Date(dateStr+"T00:00:00");
+  const now=new Date();
+  if(f.mode==="today")return d.toDateString()===now.toDateString();
+  if(f.mode==="month")return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+  if(f.mode==="week"){
+    const start=new Date(now.getFullYear(),now.getMonth(),now.getDate()-now.getDay());
+    const end=new Date(start.getFullYear(),start.getMonth(),start.getDate()+7);
+    return d>=start&&d<end;
+  }
+  return true;
+};
+
 // ── SVG ICONS ─────────────────────────────────────────────────────────────────
 const G=({d,s=20,c="currentColor",sw=1.7}:{d:string|string[];s?:number;c?:string;sw?:number})=>(
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
@@ -86,6 +102,8 @@ const IC={
   mail:["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z","m2 6 10 7 10-7"],
   user:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"],
   tag:["M20.59 13.41 12 22l-9-9L11.59 4.41A2 2 0 0 1 13 3.83h6.17A1.83 1.83 0 0 1 21 5.66v6.17a2 2 0 0 1-.41.99z","M15.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"],
+  refresh:["M23 4v6h-6","M1 20v-6h6","M3.51 9a9 9 0 0 1 14.85-3.36L23 10","M1 14l4.64 4.36A9 9 0 0 0 20.49 15"],
+  filter:["M22 3H2l8 9.46V19l4 2v-8.54z"],
 
 };
 
@@ -280,6 +298,25 @@ const AccountPicker=({label,val,onChange,accounts,color}:{label:string;val:strin
       <Chip label="Cash" active={!val} color={color} onClick={()=>onChange(undefined)}/>
       {accounts.map(a=><Chip key={a.id} label={a.name} active={val===a.id} color={color} onClick={()=>onChange(a.id)}/>)}
     </div>
+  </div>
+);
+
+const DATE_FILTER_OPTS:{v:DateFilter["mode"];l:string}[]=[{v:"all",l:"All Time"},{v:"today",l:"Today"},{v:"week",l:"This Week"},{v:"month",l:"This Month"},{v:"custom",l:"Pick a Date"}];
+const DateFilterBar=({value,onChange,color}:{value:DateFilter;onChange:(v:DateFilter)=>void;color:string})=>(
+  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+    <div style={{display:"flex",alignItems:"center",gap:6}}>
+      <G d={IC.filter} s={12} c={D.t3}/>
+      <span style={{fontSize:11,color:D.t3,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase" as const}}>Filter</span>
+    </div>
+    <div style={{display:"flex",flexWrap:"wrap" as const,gap:8}}>
+      {DATE_FILTER_OPTS.map(o=>(
+        <Chip key={o.v} label={o.l} active={value.mode===o.v} color={color} onClick={()=>onChange({mode:o.v,date:o.v==="custom"?(value.date||today()):value.date})}/>
+      ))}
+    </div>
+    {value.mode==="custom"&&(
+      <input type="date" value={value.date} onChange={e=>onChange({mode:"custom",date:e.target.value})}
+        style={{boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:12,padding:"11px 14px",color:D.t1,fontSize:15,outline:"none",fontFamily:"inherit"}}/>
+    )}
   </div>
 );
 
@@ -719,6 +756,11 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const upcomingMonthly=monthly.filter(m=>m.active).map(m=>({...m,daysUntil:daysUntilDueDay(m.dueDay)})).sort((a,b)=>a.daysUntil-b.daysUntil);
   const dueSoonCount=upcomingMonthly.filter(m=>m.daysUntil<=7).length;
   const [notifOpen,setNotifOpen]=useState(false);
+  const [refreshing,setRefreshing]=useState(false);
+  const doRefresh=()=>{
+    setRefreshing(true);
+    setTimeout(()=>window.location.reload(),150);
+  };
 
   const openSheet=(key:string,opts?:{debt?:Debt;editTx?:Tx;editMonthly?:Monthly;editDebt?:Debt;editAccount?:Account})=>setSheet({open:true,key,...opts});
   const closeSheet=()=>setSheet({open:false,key:""});
@@ -828,7 +870,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   // ── COMPANY ────────────────────────────────────────────────────
   const CompanyTab=()=>{
     const [view,setView]=useState<"in"|"out"|"monthly">("in");
-    const list=txs.filter(t=>t.type===(view==="in"?"company_in":"company_out"));
+    const [dateFilter,setDateFilter]=useState<DateFilter>({mode:"all",date:today()});
+    const list=txs.filter(t=>t.type===(view==="in"?"company_in":"company_out")&&matchesDateFilter(t.date,dateFilter));
     const compMonthly=monthly.filter(m=>m.scope==="company");
     const col=view==="in"?D.teal:view==="out"?D.rose:D.gold;
     return(
@@ -871,6 +914,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           <G d={IC.plus} s={16} c={col}/>Add {view==="in"?"Revenue":view==="out"?"Expense":"Monthly Fixed Cost"}
         </button>
 
+        {view!=="monthly"&&<DateFilterBar value={dateFilter} onChange={setDateFilter} color={col}/>}
+
         {/* List */}
         <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,overflow:"hidden"}}>
           {view==="monthly"?(
@@ -880,7 +925,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           ):(
             list.length>0
               ?<div style={{padding:"0 18px"}}>{list.map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx)} onEdit={()=>openSheet(tx.type,{editTx:tx})}/>)}</div>
-              :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No {view==="in"?"revenue":"expenses"} recorded yet.</div>
+              :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>{dateFilter.mode==="all"?`No ${view==="in"?"revenue":"expenses"} recorded yet.`:"Nothing in this period."}</div>
           )}
         </div>
       </div>
@@ -892,8 +937,11 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [view,setView]=useState<"daily"|"monthly"|"income">("daily");
     const [editingSavings,setEditingSavings]=useState(false);
     const [savingsInput,setSavingsInput]=useState(String(settings.savings||0));
+    const [dateFilter,setDateFilter]=useState<DateFilter>({mode:"all",date:today()});
     const daily=txs.filter(t=>t.type==="personal_out");
     const income=txs.filter(t=>t.type==="personal_in");
+    const filteredDaily=daily.filter(t=>matchesDateFilter(t.date,dateFilter));
+    const filteredIncome=income.filter(t=>matchesDateFilter(t.date,dateFilter));
     const col=view==="income"?D.teal:view==="monthly"?D.violet:D.rose;
     // Category breakdown for daily
     const cats:{[k:string]:number}={};
@@ -990,6 +1038,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           <G d={IC.plus} s={16} c={col}/>Add {view==="daily"?"Expense":view==="monthly"?"Monthly Expense":"Income"}
         </button>
 
+        {view!=="monthly"&&<DateFilterBar value={dateFilter} onChange={setDateFilter} color={col}/>}
+
         {/* List */}
         <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,overflow:"hidden"}}>
           {view==="monthly"?(
@@ -997,13 +1047,13 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
               ?<div style={{padding:"0 18px"}}>{perMonthly.map(m=><MonthlyRow key={m.id} m={m} accounts={accounts} onDel={()=>delMonthly(m.id)} onToggle={()=>toggleMonthly(m.id)} onEdit={()=>openSheet("personal_monthly",{editMonthly:m})}/>)}</div>
               :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No monthly expenses. Add rent, family support, subscriptions, or friend loans.</div>
           ):view==="daily"?(
-            daily.length>0
-              ?<div style={{padding:"0 18px"}}>{daily.map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx)} onEdit={()=>openSheet(tx.type,{editTx:tx})}/>)}</div>
-              :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No daily expenses yet. Start tracking food, transport, shopping…</div>
+            filteredDaily.length>0
+              ?<div style={{padding:"0 18px"}}>{filteredDaily.map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx)} onEdit={()=>openSheet(tx.type,{editTx:tx})}/>)}</div>
+              :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>{dateFilter.mode==="all"?"No daily expenses yet. Start tracking food, transport, shopping…":"Nothing in this period."}</div>
           ):(
-            income.length>0
-              ?<div style={{padding:"0 18px"}}>{income.map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx)} onEdit={()=>openSheet(tx.type,{editTx:tx})}/>)}</div>
-              :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>No personal income recorded.</div>
+            filteredIncome.length>0
+              ?<div style={{padding:"0 18px"}}>{filteredIncome.map(tx=><TxRow key={tx.id} tx={tx} accounts={accounts} onDel={()=>delTx(tx)} onEdit={()=>openSheet(tx.type,{editTx:tx})}/>)}</div>
+              :<div style={{padding:"48px 20px",textAlign:"center" as const,color:D.t2}}>{dateFilter.mode==="all"?"No personal income recorded.":"Nothing in this period."}</div>
           )}
         </div>
       </div>
@@ -1331,7 +1381,11 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         {tab==="settings"&&<SettingsTab/>}
       </div>
 
-      {/* Notifications */}
+      {/* Refresh + Notifications */}
+      <button onClick={doRefresh} aria-label="Refresh" disabled={refreshing}
+        style={{position:"fixed",top:16,right:"max(66px, calc(50vw - 176px))",width:42,height:42,borderRadius:14,background:"rgba(17,26,51,0.9)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",border:`1px solid ${D.b2}`,cursor:refreshing?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}>
+        <G d={IC.refresh} s={17} c={D.t2} sw={2}/>
+      </button>
       <button onClick={()=>setNotifOpen(true)} aria-label="Notifications"
         style={{position:"fixed",top:16,right:"max(16px, calc(50vw - 224px))",width:42,height:42,borderRadius:14,background:"rgba(17,26,51,0.9)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",border:`1px solid ${D.b2}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}>
         <G d={IC.bell} s={19} c={dueSoonCount>0?D.gold:D.t2}/>
