@@ -4,7 +4,7 @@ import { Inter } from "next/font/google";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, setRememberMe } from "@/lib/supabase/client";
 import * as db from "@/lib/supabase/db";
-import type { TxType, Tx, Monthly, DebtPayment, Debt, Settings, Account, AccountKind } from "@/lib/types";
+import type { TxType, Tx, Monthly, Debt, Settings, Account, AccountKind } from "@/lib/types";
 
 const font = Inter({ subsets: ["latin"], display: "swap", weight: ["400","500","600","700"] });
 
@@ -138,7 +138,7 @@ const AccountCard=({account,usage,onDelete}:{account:Account;usage?:{used:number
         {onDelete&&<button onClick={onDelete} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:0}}><G d={IC.trash} s={13}/></button>}
       </div>
       <div style={{fontSize:15,fontWeight:700,color:D.t1,marginBottom:3,whiteSpace:"nowrap" as const,overflow:"hidden",textOverflow:"ellipsis"}}>{account.name}</div>
-      <div style={{fontSize:11,color:D.t2,marginBottom:isCredit?14:0}}>{accountKindLabel(account.kind)}</div>
+      <div style={{fontSize:11,color:D.t2,marginBottom:isCredit||account.balance!=null?14:0}}>{accountKindLabel(account.kind)}</div>
       {isCredit&&(
         <div>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
@@ -147,6 +147,9 @@ const AccountCard=({account,usage,onDelete}:{account:Account;usage?:{used:number
           </div>
           <Prog val={pct} col={pct>85?D.rose:D.gold} h={4}/>
         </div>
+      )}
+      {!isCredit&&account.balance!=null&&(
+        <div style={{fontSize:20,fontWeight:800,color:account.balance<0?D.rose:D.t1,fontVariantNumeric:"tabular-nums"}}>{money(account.balance,sym(account.currency),true)}</div>
       )}
     </div>
   );
@@ -208,15 +211,6 @@ const Sel=({label,val,onChange,opts}:{label:string;val:string;onChange:(v:string
       <option value="">Select…</option>
       {opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
     </select>
-  </div>
-);
-
-const Toggler=({on,toggle,label,sub}:{on:boolean;toggle:()=>void;label:string;sub?:string})=>(
-  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,padding:"14px 16px"}}>
-    <div><div style={{fontSize:14,fontWeight:600,color:D.t1}}>{label}</div>{sub&&<div style={{fontSize:12,color:D.t2,marginTop:3}}>{sub}</div>}</div>
-    <button onClick={toggle} style={{width:50,height:28,borderRadius:14,background:on?D.gold:D.b2,border:"none",cursor:"pointer",position:"relative",transition:"background .25s",flexShrink:0}}>
-      <div style={{position:"absolute",top:4,left:on?26:4,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left .25s",boxShadow:"0 2px 6px rgba(0,0,0,0.3)"}}/>
-    </button>
   </div>
 );
 
@@ -341,7 +335,7 @@ const MonthlyRow=({m,accounts,onDel,onToggle}:{m:Monthly;accounts:Account[];onDe
 };
 
 // ── ADD FORMS ──────────────────────────────────────────────────────────────────
-const AddTxForm=({type,onAdd,onClose,defCur,accounts}:{type:TxType;onAdd:(t:Tx)=>void;onClose:()=>void;defCur:string;accounts:Account[]})=>{
+const AddTxForm=({type,onAdd,onClose,defCur,accounts,companyCategories}:{type:TxType;onAdd:(t:Tx)=>void;onClose:()=>void;defCur:string;accounts:Account[];companyCategories:string[]})=>{
   const [amt,setAmt]=useState("");const [desc,setDesc]=useState("");const [cat,setCat]=useState("");
   const [date,setDate]=useState(today());const [notes,setNotes]=useState("");const [cur,setCur]=useState(defCur);
   const [myShare,setMyShare]=useState("");
@@ -350,7 +344,8 @@ const AddTxForm=({type,onAdd,onClose,defCur,accounts}:{type:TxType;onAdd:(t:Tx)=
   const isIn=type==="company_in"||type==="personal_in";
   const isCompany=type==="company_in"||type==="company_out";
   const showAccountPicker=type==="personal_out"||type==="company_out";
-  const cats=type==="company_in"?COMPANY_IN_CATS:type==="company_out"?COMPANY_OUT_CATS:type==="personal_in"?PERSONAL_IN_CATS:PERSONAL_OUT_CATS;
+  const baseCats=type==="company_in"?COMPANY_IN_CATS:type==="company_out"?COMPANY_OUT_CATS:type==="personal_in"?PERSONAL_IN_CATS:PERSONAL_OUT_CATS;
+  const cats=isCompany?[...baseCats,...companyCategories.filter(c=>!baseCats.includes(c))]:baseCats;
   const c=isIn?D.teal:D.rose;
   const ok=!!amt&&!!cat;
   const handle=()=>{
@@ -381,11 +376,13 @@ const AddTxForm=({type,onAdd,onClose,defCur,accounts}:{type:TxType;onAdd:(t:Tx)=
 
 const SUBSCRIPTION_PRESETS = ["Netflix","Spotify","YouTube Premium","iCloud+","Amazon Prime","Disney+","Gym Membership","Internet & Phone"];
 
-const AddMonthlyForm=({scope,onAdd,onClose,defCur,accounts}:{scope:"personal"|"company";onAdd:(m:Monthly)=>void;onClose:()=>void;defCur:string;accounts:Account[]})=>{
+const AddMonthlyForm=({scope,onAdd,onClose,defCur,accounts,companyCategories}:{scope:"personal"|"company";onAdd:(m:Monthly)=>void;onClose:()=>void;defCur:string;accounts:Account[];companyCategories:string[]})=>{
   const [name,setName]=useState("");const [amt,setAmt]=useState("");const [cat,setCat]=useState("");
   const [day,setDay]=useState("1");const [cur,setCur]=useState(defCur);const [notes,setNotes]=useState("");
   const [accountId,setAccountId]=useState<string|undefined>(undefined);
-  const cats=scope==="company"?COMPANY_M_CATS:PERSONAL_M_CATS;const ok=!!name&&!!amt&&!!cat;
+  const baseCats=scope==="company"?COMPANY_M_CATS:PERSONAL_M_CATS;
+  const cats=scope==="company"?[...baseCats,...companyCategories.filter(c=>!baseCats.includes(c))]:baseCats;
+  const ok=!!name&&!!amt&&!!cat;
   const col=scope==="company"?D.gold:D.violet;
   const handle=()=>{if(!ok)return;onAdd({id:uid(),scope,name,amount:parseFloat(amt),currency:cur,dueDay:parseInt(day)||1,category:cat,notes,active:true,createdAt:new Date().toISOString(),accountId});onClose();};
   return(<>
@@ -445,12 +442,13 @@ const PayForm=({debt,onPay,onClose}:{debt:Debt;onPay:(n:number,note:string,date:
 
 const AddAccountForm=({onAdd,onClose,defCur}:{onAdd:(a:Account)=>void;onClose:()=>void;defCur:string})=>{
   const [name,setName]=useState("");const [kind,setKind]=useState<AccountKind>("bank");
-  const [limit,setLimit]=useState("");const [cur,setCur]=useState(defCur);
+  const [limit,setLimit]=useState("");const [balance,setBalance]=useState("");const [cur,setCur]=useState(defCur);
   const ok=!!name;
   const handle=()=>{
     if(!ok)return;
     const a:Account={id:uid(),name,kind,currency:cur,createdAt:new Date().toISOString()};
-    if(kind==="credit_card"&&limit)a.creditLimit=parseFloat(limit)||undefined;
+    if(kind==="credit_card"){if(limit)a.creditLimit=parseFloat(limit)||undefined;}
+    else{a.balance=balance?parseFloat(balance)||0:0;}
     onAdd(a);onClose();
   };
   return(<>
@@ -461,7 +459,9 @@ const AddAccountForm=({onAdd,onClose,defCur}:{onAdd:(a:Account)=>void;onClose:()
         {ACCOUNT_KINDS.map(k=><Chip key={k.v} label={k.l} active={kind===k.v} color={D.gold} onClick={()=>setKind(k.v)}/>)}
       </div>
     </div>
-    {kind==="credit_card"&&<Inp label="Credit Limit (optional)" type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>}
+    {kind==="credit_card"
+      ?<Inp label="Credit Limit (optional)" type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>
+      :<Inp label="Current Balance" type="number" val={balance} onChange={setBalance} placeholder={`${sym(cur)} 0.00`}/>}
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     <PrimaryBtn label="Add Account" onClick={handle} color={D.gold} disabled={!ok}/>
   </>);
@@ -474,7 +474,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const [monthly,setMonthly]=useState<Monthly[]>([]);
   const [debts,setDebts]=useState<Debt[]>([]);
   const [accounts,setAccounts]=useState<Account[]>([]);
-  const [settings,setSettings]=useState<Settings>({currency:"USD",name:"",savings:0});
+  const [settings,setSettings]=useState<Settings>({currency:"USD",name:"",savings:0,companyCategories:[]});
   const [sheet,setSheet]=useState<{open:boolean;key:string;debt?:Debt}>({open:false,key:""});
   const [ready,setReady]=useState(false);
 
@@ -502,8 +502,9 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     try{
       const saved=await db.insertTx(userId,{type:t.type,amount:t.amount,description:t.description,category:t.category,date:t.date,notes:t.notes,currency:t.currency,myShare:t.myShare,accountId:t.accountId});
       setTxs(p=>[saved,...p]);
+      const isExpense=saved.type==="personal_out"||saved.type==="company_out";
       const account=saved.accountId?accounts.find(a=>a.id===saved.accountId):undefined;
-      if(saved.type==="personal_out"&&account?.kind==="credit_card"){
+      if(isExpense&&account?.kind==="credit_card"){
         const existing=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===account.name.toLowerCase());
         if(existing){
           const newTotal=existing.totalAmount+saved.amount;
@@ -513,6 +514,10 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           const newDebt=await db.insertDebt(userId,{personBank:account.name,totalAmount:saved.amount,currency:saved.currency,description:"Credit Card Spending"});
           setDebts(p=>[newDebt,...p]);
         }
+      }else if(isExpense&&account&&account.balance!=null){
+        const newBalance=account.balance-saved.amount;
+        await db.setAccountBalance(account.id,newBalance);
+        setAccounts(p=>p.map(a=>a.id===account.id?{...a,balance:newBalance}:a));
       }
     }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
   },[userId,debts,accounts]);
@@ -992,6 +997,19 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [newPw,setNewPw]=useState("");
     const [pwBusy,setPwBusy]=useState(false);
     const [pwMsg,setPwMsg]=useState<{ok:boolean;text:string}|null>(null);
+    const [newCat,setNewCat]=useState("");
+    const addCategory=async()=>{
+      const clean=newCat.trim();
+      if(!clean||settings.companyCategories.includes(clean))return;
+      const next={...settings,companyCategories:[...settings.companyCategories,clean]};
+      setSettings(next);setNewCat("");
+      try{await db.upsertSettings(userId,next);}catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
+    };
+    const removeCategory=async(cat:string)=>{
+      const next={...settings,companyCategories:settings.companyCategories.filter(c=>c!==cat)};
+      setSettings(next);
+      try{await db.upsertSettings(userId,next);}catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
+    };
     const save=async()=>{
       setSaveErr("");
       const cleanUsername=username.trim().toLowerCase().replace(/[^a-z0-9_.]/g,"");
@@ -1067,6 +1085,27 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
             </div>}
         </div>
 
+        {/* Company Categories */}
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:15,fontWeight:700,color:D.t1}}>Company Categories</div>
+          <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Add your own categories — e.g. Ads, Software, Client Withdraw, Transfer, Commission — for company income and expenses.</div>
+          <div style={{display:"flex",flexWrap:"wrap" as const,gap:8}}>
+            {settings.companyCategories.length===0&&<div style={{fontSize:13,color:D.t2}}>No custom categories yet.</div>}
+            {settings.companyCategories.map(cat=>(
+              <div key={cat} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 8px 8px 14px",borderRadius:10,background:D.s3,border:`1px solid ${D.b1}`}}>
+                <span style={{fontSize:13,color:D.t1,fontWeight:600}}>{cat}</span>
+                <button onClick={()=>removeCategory(cat)} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:2,display:"flex"}}><G d={IC.x} s={12}/></button>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <input value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="e.g. Ads"
+              style={{flex:1,minWidth:0,boxSizing:"border-box" as const,background:D.s3,border:`1px solid ${D.b1}`,borderRadius:12,padding:"12px 14px",color:D.t1,fontSize:16,outline:"none",fontFamily:"inherit"}}
+              onKeyDown={e=>{if(e.key==="Enter")addCategory();}}/>
+            <button onClick={addCategory} style={{padding:"0 18px",background:D.goldDim,border:`1px solid ${D.gold}44`,borderRadius:12,color:D.gold,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
+          </div>
+        </div>
+
         {/* Change Password */}
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{fontSize:15,fontWeight:700,color:D.t1}}>Change Password</div>
@@ -1114,16 +1153,16 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     if(k==="add_debt")return<AddDebtForm onAdd={addDebt} onClose={closeSheet} defCur={settings.currency}/>;
     if(k==="pay_debt"&&sheet.debt)return<PayForm debt={sheet.debt} onPay={(n,note,date)=>payDebt(sheet.debt!.id,n,note,date)} onClose={closeSheet}/>;
     if(k==="add_account")return<AddAccountForm onAdd={addAccount} onClose={closeSheet} defCur={settings.currency}/>;
-    if(k==="company_monthly")return<AddMonthlyForm scope="company" onAdd={addMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts}/>;
-    if(k==="personal_monthly")return<AddMonthlyForm scope="personal" onAdd={addMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts}/>;
-    if(["company_in","company_out","personal_in","personal_out"].includes(k))return<AddTxForm type={k as TxType} onAdd={addTx} onClose={closeSheet} defCur={settings.currency} accounts={accounts}/>;
+    if(k==="company_monthly")return<AddMonthlyForm scope="company" onAdd={addMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;
+    if(k==="personal_monthly")return<AddMonthlyForm scope="personal" onAdd={addMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;
+    if(["company_in","company_out","personal_in","personal_out"].includes(k))return<AddTxForm type={k as TxType} onAdd={addTx} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;
     return null;
   };
 
   const cfg=sheetConfig[sheet.key];
 
   return(
-    <div className={font.className} style={{background:D.bg,minHeight:"100vh",maxWidth:480,margin:"0 auto",color:D.t1}}>
+    <div className={font.className} style={{background:D.bg,minHeight:"100vh",width:"100%",maxWidth:480,margin:"0 auto",color:D.t1,overflowX:"hidden" as const,boxSizing:"border-box" as const}}>
       <div style={{paddingBottom:88}}>
         {tab==="home"&&<HomeTab/>}
         {tab==="company"&&<CompanyTab/>}

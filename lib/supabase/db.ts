@@ -39,6 +39,7 @@ function rowToAccount(r: Record<string, unknown>): Account {
     name: r.name as string,
     kind: r.kind as Account["kind"],
     creditLimit: r.credit_limit != null ? Number(r.credit_limit) : undefined,
+    balance: r.balance != null ? Number(r.balance) : undefined,
     currency: r.currency as string,
     createdAt: r.created_at as string,
   };
@@ -67,15 +68,34 @@ function rowToDebt(r: Record<string, unknown>, payments: DebtPayment[]): Debt {
   };
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 500): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < retries) await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 export async function fetchAll(userId: string) {
-  const [txRes, monRes, debtRes, payRes, setRes, acctRes] = await Promise.all([
-    supabase.from("transactions").select("*").eq("user_id", userId).order("date", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("monthly_expenses").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-    supabase.from("debts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-    supabase.from("debt_payments").select("*").eq("user_id", userId),
-    supabase.from("settings").select("*").eq("user_id", userId).maybeSingle(),
-    supabase.from("accounts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-  ]);
+  const [txRes, monRes, debtRes, payRes, setRes, acctRes] = await withRetry(() =>
+    Promise.all([
+      supabase.from("transactions").select("*").eq("user_id", userId).order("date", { ascending: false }).order("created_at", { ascending: false }),
+      supabase.from("monthly_expenses").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+      supabase.from("debts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+      supabase.from("debt_payments").select("*").eq("user_id", userId),
+      supabase.from("settings").select("*").eq("user_id", userId).maybeSingle(),
+      supabase.from("accounts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+    ]).then((results) => {
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
+      return results;
+    })
+  );
   if (txRes.error) throw txRes.error;
   if (monRes.error) throw monRes.error;
   if (debtRes.error) throw debtRes.error;
@@ -96,8 +116,8 @@ export async function fetchAll(userId: string) {
   );
 
   const settings: Settings = setRes.data
-    ? { currency: setRes.data.currency as string, name: setRes.data.name as string, savings: Number(setRes.data.savings ?? 0), username: (setRes.data.username as string) ?? undefined }
-    : { currency: "USD", name: "", savings: 0 };
+    ? { currency: setRes.data.currency as string, name: setRes.data.name as string, savings: Number(setRes.data.savings ?? 0), username: (setRes.data.username as string) ?? undefined, companyCategories: (setRes.data.company_categories as string[]) ?? [] }
+    : { currency: "USD", name: "", savings: 0, companyCategories: [] };
 
   return {
     txs: (txRes.data ?? []).map(rowToTx),
@@ -206,7 +226,7 @@ export async function insertDebtPayment(userId: string, debtId: string, amount: 
 export async function upsertSettings(userId: string, s: Settings) {
   const { error } = await supabase
     .from("settings")
-    .upsert({ user_id: userId, currency: s.currency, name: s.name, savings: s.savings, username: s.username || null }, { onConflict: "user_id" });
+    .upsert({ user_id: userId, currency: s.currency, name: s.name, savings: s.savings, username: s.username || null, company_categories: s.companyCategories }, { onConflict: "user_id" });
   if (error) throw error;
 }
 
@@ -219,7 +239,7 @@ export async function resolveUsernameEmail(username: string): Promise<string | n
 export async function insertAccount(userId: string, a: Omit<Account, "id" | "createdAt">): Promise<Account> {
   const { data, error } = await supabase
     .from("accounts")
-    .insert({ user_id: userId, name: a.name, kind: a.kind, credit_limit: a.creditLimit ?? null, currency: a.currency })
+    .insert({ user_id: userId, name: a.name, kind: a.kind, credit_limit: a.creditLimit ?? null, balance: a.balance ?? null, currency: a.currency })
     .select()
     .single();
   if (error) throw error;
@@ -228,5 +248,10 @@ export async function insertAccount(userId: string, a: Omit<Account, "id" | "cre
 
 export async function deleteAccount(id: string) {
   const { error } = await supabase.from("accounts").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function setAccountBalance(id: string, balance: number) {
+  const { error } = await supabase.from("accounts").update({ balance }).eq("id", id);
   if (error) throw error;
 }
