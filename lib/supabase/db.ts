@@ -42,6 +42,7 @@ function rowToAccount(r: Record<string, unknown>): Account {
     balance: r.balance != null ? Number(r.balance) : undefined,
     currency: r.currency as string,
     createdAt: r.created_at as string,
+    sortOrder: r.sort_order != null ? Number(r.sort_order) : undefined,
   };
 }
 
@@ -89,7 +90,7 @@ export async function fetchAll(userId: string) {
       supabase.from("debts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
       supabase.from("debt_payments").select("*").eq("user_id", userId),
       supabase.from("settings").select("*").eq("user_id", userId).maybeSingle(),
-      supabase.from("accounts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+      supabase.from("accounts").select("*").eq("user_id", userId).order("sort_order", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false }),
     ]).then((results) => {
       const failed = results.find((r) => r.error);
       if (failed?.error) throw failed.error;
@@ -322,4 +323,12 @@ export async function updateAccount(id: string, a: Omit<Account, "id" | "created
 export async function setAccountBalance(id: string, balance: number) {
   const { error } = await supabase.from("accounts").update({ balance }).eq("id", id);
   if (error) throw error;
+}
+
+export async function reorderAccounts(orderedIds: string[]) {
+  const results = await Promise.all(
+    orderedIds.map((id, i) => supabase.from("accounts").update({ sort_order: i }).eq("id", id))
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw failed.error;
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Inter } from "next/font/google";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, setRememberMe } from "@/lib/supabase/client";
@@ -18,7 +18,7 @@ const CURRENCIES = [
 const PERSONAL_OUT_CATS = ["Food & Dining","Transport","Shopping","Healthcare","Groceries","Coffee & Cafes","Entertainment","Education","Clothing","Other"];
 const PERSONAL_IN_CATS = ["My Company Cut","Freelance","Investment Return","Rental Income","Gift","Side Income","Other"];
 const PERSONAL_M_CATS = ["Rent","Family Support","Friend Loan Payment","Subscription","Insurance","Gym","Internet & Phone","Electricity","Water","Other Monthly"];
-const COMPANY_IN_CATS = ["Client Payment","Project Revenue","Consulting","Product Sales","Commission","Retainer","Other Revenue"];
+const COMPANY_IN_CATS = ["FTD","Retention Deposit","Client Payment","Project Revenue","Consulting","Product Sales","Commission","Retainer","Other Revenue"];
 const COMPANY_OUT_CATS = ["Team Salaries","Marketing & Ads","Software & Tools","Office Rent","Equipment","Legal","Taxes","Travel","Logistics","Other"];
 const COMPANY_M_CATS = ["Office Rent","Salaries","Software Subscriptions","Marketing Budget","Insurance","Utilities","Accounting","Other Monthly"];
 const MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -113,6 +113,7 @@ const IC={
   refresh:["M23 4v6h-6","M1 20v-6h6","M3.51 9a9 9 0 0 1 14.85-3.36L23 10","M1 14l4.64 4.36A9 9 0 0 0 20.49 15"],
   filter:["M22 3H2l8 9.46V19l4 2v-8.54z"],
   chevron:"M9 18l6-6-6-6",
+  grip:"M4 7h16M4 12h16M4 17h16",
 
 };
 
@@ -431,7 +432,6 @@ const AddTxForm=({type,editing,onAdd,onEdit,onClose,defCur,accounts,companyCateg
   const [more,setMore]=useState(!!editing);
   const isIn=type==="company_in"||type==="personal_in";
   const isCompany=type==="company_in"||type==="company_out";
-  const showAccountPicker=type==="personal_out"||type==="company_out";
   const baseCats=type==="company_in"?COMPANY_IN_CATS:type==="company_out"?COMPANY_OUT_CATS:type==="personal_in"?PERSONAL_IN_CATS:PERSONAL_OUT_CATS;
   const cats=isCompany?[...baseCats,...companyCategories.filter(c=>!baseCats.includes(c))]:baseCats;
   const c=isIn?D.teal:D.rose;
@@ -440,7 +440,7 @@ const AddTxForm=({type,editing,onAdd,onEdit,onClose,defCur,accounts,companyCateg
     if(!ok)return;
     const tx:Tx={id:editing?.id||uid(),type,amount:parseFloat(amt),description:desc||cat,category:cat,date,notes,currency:cur,createdAt:editing?.createdAt||new Date().toISOString()};
     if(isCompany&&myShare)tx.myShare=parseFloat(myShare)||0;
-    if(showAccountPicker&&accountId)tx.accountId=accountId;
+    if(accountId)tx.accountId=accountId;
     if(editing&&onEdit)onEdit(editing,tx);else onAdd(tx);
     onClose();
   };
@@ -450,7 +450,7 @@ const AddTxForm=({type,editing,onAdd,onEdit,onClose,defCur,accounts,companyCateg
     {isCompany&&(
       <Inp label={type==="company_in"?"How much of this is yours? (optional)":"How much are you personally paying? (optional)"} type="number" val={myShare} onChange={setMyShare} placeholder={`${sym(cur)} 0.00`}/>
     )}
-    {showAccountPicker&&<AccountPicker label="Paid With" val={accountId} onChange={setAccountId} accounts={accounts} color={c}/>}
+    <AccountPicker label={isIn?"Deposited To":"Paid With"} val={accountId} onChange={setAccountId} accounts={accounts} color={c}/>
     <Inp label="Description (optional)" val={desc} onChange={setDesc} placeholder={cat||"What is this for?"}/>
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     {!more
@@ -568,6 +568,48 @@ const AddAccountForm=({editing,onAdd,onEdit,onClose,defCur}:{editing?:Account;on
   </>);
 };
 
+const ReorderAccountsSheet=({accounts,onSave,onClose}:{accounts:Account[];onSave:(ids:string[])=>void;onClose:()=>void})=>{
+  const [order,setOrder]=useState(accounts);
+  const dragIndex=useRef<number|null>(null);
+  const startY=useRef(0);
+  const [dragY,setDragY]=useState(0);
+  const [activeIdx,setActiveIdx]=useState<number|null>(null);
+  const rowH=56;
+  const onDown=(i:number)=>(e:React.PointerEvent)=>{
+    dragIndex.current=i;startY.current=e.clientY;setActiveIdx(i);setDragY(0);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onMove=(e:React.PointerEvent)=>{
+    if(dragIndex.current==null)return;
+    const delta=e.clientY-startY.current;
+    setDragY(delta);
+    const shift=Math.round(delta/rowH);
+    const from=dragIndex.current;
+    const to=Math.min(order.length-1,Math.max(0,from+shift));
+    if(to!==from){
+      setOrder(o=>{const next=[...o];const [item]=next.splice(from,1);next.splice(to,0,item);return next;});
+      dragIndex.current=to;startY.current=e.clientY;setActiveIdx(to);setDragY(0);
+    }
+  };
+  const onUp=()=>{dragIndex.current=null;setActiveIdx(null);setDragY(0);};
+  return(<>
+    <div style={{fontSize:13,color:D.t2}}>Drag using the handle to change the order accounts appear on Home.</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {order.map((a,i)=>(
+        <div key={a.id} style={{display:"flex",alignItems:"center",gap:12,height:48,boxSizing:"border-box" as const,padding:"0 14px",background:D.s3,border:`1px solid ${D.b1}`,borderRadius:14,position:"relative",transform:activeIdx===i?`translateY(${dragY}px)`:"none",zIndex:activeIdx===i?2:1,boxShadow:activeIdx===i?"0 8px 24px rgba(0,0,0,0.35)":"none"}}>
+          <G d={accountKindIcon(a.kind)} s={17} c={D.gold}/>
+          <div style={{flex:1,fontSize:14,fontWeight:600,color:D.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{a.name}</div>
+          <div onPointerDown={onDown(i)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+            style={{padding:8,margin:-8,cursor:"grab",color:D.t3,touchAction:"none"}}>
+            <G d={IC.grip} s={17}/>
+          </div>
+        </div>
+      ))}
+    </div>
+    <PrimaryBtn label="Done" onClick={()=>{onSave(order.map(a=>a.id));onClose();}} color={D.gold}/>
+  </>);
+};
+
 // ── MAIN APP ───────────────────────────────────────────────────────────────────
 function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const [tab,setTab]=useState("home");
@@ -630,59 +672,51 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     await db.setAccountBalance(account.id,newBalance);
     setAccounts(p=>p.map(a=>a.id===account.id?{...a,balance:newBalance}:a));
   },[]);
-  // Applies the balance/debt effect of an expense tx being added (amount is positive spend)
-  const applyExpenseEffect=useCallback(async(account:Account|undefined,amount:number,currency:string)=>{
+  // Applies the balance/debt effect of a tx being added (amount is signed magnitude of the change;
+  // isIncome flips the direction — income raises balance/lowers debt, expense does the opposite)
+  const applyTxAccountEffect=useCallback(async(account:Account|undefined,amount:number,currency:string,isIncome:boolean)=>{
     if(!account)return;
-    if(account.kind==="credit_card")await adjustCardDebt(account,amount,currency);
-    else if(account.balance!=null)await adjustAccountBalance(account,-amount);
+    if(account.kind==="credit_card")await adjustCardDebt(account,isIncome?-amount:amount,currency);
+    else if(account.balance!=null)await adjustAccountBalance(account,isIncome?amount:-amount);
   },[adjustCardDebt,adjustAccountBalance]);
 
   const addTx=useCallback(async(t:Tx)=>{
     try{
       const saved=await db.insertTx(userId,{type:t.type,amount:t.amount,description:t.description,category:t.category,date:t.date,notes:t.notes,currency:t.currency,myShare:t.myShare,accountId:t.accountId});
       setTxs(p=>[saved,...p]);
-      const isExpense=saved.type==="personal_out"||saved.type==="company_out";
+      const isIncome=saved.type==="personal_in"||saved.type==="company_in";
       const account=saved.accountId?accounts.find(a=>a.id===saved.accountId):undefined;
-      if(isExpense)await applyExpenseEffect(account,saved.amount,saved.currency);
+      await applyTxAccountEffect(account,saved.amount,saved.currency,isIncome);
       showToast(saved.type.endsWith("_in")?"Income added":"Expense added");
     }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
-  },[userId,accounts,applyExpenseEffect,showToast]);
+  },[userId,accounts,applyTxAccountEffect,showToast]);
 
   const updateTx=useCallback(async(original:Tx,edited:Tx)=>{
     try{
       const saved=await db.updateTx(original.id,{type:edited.type,amount:edited.amount,description:edited.description,category:edited.category,date:edited.date,notes:edited.notes,currency:edited.currency,myShare:edited.myShare,accountId:edited.accountId});
       setTxs(p=>p.map(t=>t.id===saved.id?saved:t));
-      const isExpense=saved.type==="personal_out"||saved.type==="company_out";
-      if(isExpense){
-        const oldAccount=original.accountId?accounts.find(a=>a.id===original.accountId):undefined;
-        const newAccount=saved.accountId?accounts.find(a=>a.id===saved.accountId):undefined;
-        if(oldAccount&&newAccount&&oldAccount.id===newAccount.id){
-          const delta=saved.amount-original.amount;
-          if(oldAccount.kind==="credit_card")await adjustCardDebt(oldAccount,delta,saved.currency);
-          else if(oldAccount.balance!=null)await adjustAccountBalance(oldAccount,-delta);
-        }else{
-          if(oldAccount){
-            if(oldAccount.kind==="credit_card")await adjustCardDebt(oldAccount,-original.amount,original.currency);
-            else if(oldAccount.balance!=null)await adjustAccountBalance(oldAccount,original.amount);
-          }
-          await applyExpenseEffect(newAccount,saved.amount,saved.currency);
-        }
+      const isIncome=saved.type==="personal_in"||saved.type==="company_in";
+      const oldAccount=original.accountId?accounts.find(a=>a.id===original.accountId):undefined;
+      const newAccount=saved.accountId?accounts.find(a=>a.id===saved.accountId):undefined;
+      if(oldAccount&&newAccount&&oldAccount.id===newAccount.id){
+        const delta=saved.amount-original.amount;
+        await applyTxAccountEffect(oldAccount,delta,saved.currency,isIncome);
+      }else{
+        if(oldAccount)await applyTxAccountEffect(oldAccount,-original.amount,original.currency,isIncome);
+        await applyTxAccountEffect(newAccount,saved.amount,saved.currency,isIncome);
       }
       showToast("Changes saved");
     }catch(err){console.error(err);window.alert("Couldn't save changes. Please try again.");}
-  },[accounts,adjustCardDebt,adjustAccountBalance,applyExpenseEffect,showToast]);
+  },[accounts,applyTxAccountEffect,showToast]);
 
   const delTx=useCallback((tx:Tx)=>{
     setTxs(p=>p.filter(t=>t.id!==tx.id));
     db.deleteTx(tx.id).catch(err=>console.error(err));
-    const isExpense=tx.type==="personal_out"||tx.type==="company_out";
+    const isIncome=tx.type==="personal_in"||tx.type==="company_in";
     const account=tx.accountId?accounts.find(a=>a.id===tx.accountId):undefined;
-    if(isExpense&&account){
-      if(account.kind==="credit_card")adjustCardDebt(account,-tx.amount,tx.currency).catch(err=>console.error(err));
-      else if(account.balance!=null)adjustAccountBalance(account,tx.amount).catch(err=>console.error(err));
-    }
+    applyTxAccountEffect(account,-tx.amount,tx.currency,isIncome).catch(err=>console.error(err));
     showToast("Deleted");
-  },[accounts,adjustCardDebt,adjustAccountBalance,showToast]);
+  },[accounts,applyTxAccountEffect,showToast]);
 
   const addMonthly=useCallback(async(m:Monthly)=>{
     try{
@@ -750,6 +784,14 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     db.deleteAccount(id).catch(err=>console.error(err));
     showToast("Deleted");
   },[showToast]);
+  const reorderAccounts=useCallback((orderedIds:string[])=>{
+    setAccounts(p=>{
+      const byId=new Map(p.map(a=>[a.id,a]));
+      return orderedIds.map((id,i)=>({...byId.get(id)!,sortOrder:i}));
+    });
+    db.reorderAccounts(orderedIds).catch(err=>console.error(err));
+    showToast("Order saved");
+  },[showToast]);
 
   const addDebt=useCallback(async(d:Debt)=>{
     try{
@@ -796,7 +838,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const myCutOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
   const myCut=myCutIn-myCutOut;
   const isCreditTx=(t:Tx)=>accounts.find(a=>a.id===t.accountId)?.kind==="credit_card";
-  const perIn=txs.filter(t=>t.type==="personal_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const perIn=txs.filter(t=>t.type==="personal_in"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const perOut=txs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const perMonthlyActive=monthly.filter(m=>m.scope==="personal"&&m.active);
   const perMonthlyTotal=perMonthlyActive.reduce((s,m)=>s+toBase(m.amount,m.currency),0);
@@ -854,7 +896,14 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
       {/* Accounts */}
       {accounts.length>0&&(
         <div style={{marginBottom:8}}>
-          <div style={{fontSize:15,fontWeight:700,color:D.t1,padding:"0 16px 12px"}}>Your Accounts</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px 12px"}}>
+            <div style={{fontSize:15,fontWeight:700,color:D.t1}}>Your Accounts</div>
+            {accounts.length>1&&(
+              <button onClick={()=>openSheet("reorder_accounts")} style={{background:"none",border:"none",cursor:"pointer",color:D.t2,display:"flex",alignItems:"center",gap:4,fontSize:12,fontWeight:700,fontFamily:"inherit",padding:0}}>
+                <G d={IC.grip} s={13}/>Reorder
+              </button>
+            )}
+          </div>
           <div style={{display:"flex",gap:12,overflowX:"auto" as const,padding:"0 16px 6px"}}>
             {accounts.map(a=>{
               const debt=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===a.name.toLowerCase());
@@ -1460,6 +1509,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     add_debt:{title:sheet.editDebt?"Edit Debt / Loan":"Add Debt / Loan",tall:true},
     pay_debt:{title:`Pay — ${sheet.debt?.personBank||""}`},
     add_account:{title:sheet.editAccount?"Edit Payment Account":"Add Payment Account"},
+    reorder_accounts:{title:"Reorder Accounts"},
   };
 
   const sheetBody=()=>{
@@ -1468,6 +1518,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     if(k==="add_debt")return<AddDebtForm editing={sheet.editDebt} onAdd={addDebt} onEdit={updateDebt} onClose={closeSheet} defCur={settings.currency}/>;
     if(k==="pay_debt"&&sheet.debt)return<PayForm debt={sheet.debt} onPay={(n,note,date)=>payDebt(sheet.debt!.id,n,note,date)} onClose={closeSheet}/>;
     if(k==="add_account")return<AddAccountForm editing={sheet.editAccount} onAdd={addAccount} onEdit={updateAccount} onClose={closeSheet} defCur={settings.currency}/>;
+    if(k==="reorder_accounts")return<ReorderAccountsSheet accounts={accounts} onSave={reorderAccounts} onClose={closeSheet}/>;
     if(k==="company_monthly")return<AddMonthlyForm scope="company" editing={sheet.editMonthly} onAdd={addMonthly} onEdit={updateMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;
     if(k==="personal_monthly")return<AddMonthlyForm scope="personal" editing={sheet.editMonthly} onAdd={addMonthly} onEdit={updateMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;
     if(["company_in","company_out","personal_in","personal_out"].includes(k))return<AddTxForm type={k as TxType} editing={sheet.editTx} onAdd={addTx} onEdit={updateTx} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;
