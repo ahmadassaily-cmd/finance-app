@@ -174,8 +174,9 @@ const SectionCard=({icon,title,children}:{icon:string|string[];title:string;chil
 );
 
 const AccountCard=({account,usage,onDelete,onEdit}:{account:Account;usage?:{used:number;available?:number};onDelete?:()=>void;onEdit?:()=>void})=>{
-  const isCredit=account.kind==="credit_card"&&account.creditLimit!=null;
-  const pct=isCredit?Math.min(100,((usage?.used||0)/account.creditLimit!)*100):0;
+  const isCreditCard=account.kind==="credit_card";
+  const isCreditWithLimit=isCreditCard&&account.creditLimit!=null;
+  const pct=isCreditWithLimit?Math.min(100,((usage?.used||0)/account.creditLimit!)*100):0;
   return(
     <div onClick={onEdit} style={{minWidth:210,width:210,borderRadius:18,padding:"18px 18px 16px",flexShrink:0,position:"relative",overflow:"hidden",background:`linear-gradient(135deg, ${D.s3} 0%, ${D.s2} 65%, ${D.s1} 100%)`,border:`1px solid ${D.b2}`,cursor:onEdit?"pointer":"default"}}>
       <div style={{position:"absolute",top:-30,right:-30,width:110,height:110,borderRadius:"50%",background:`radial-gradient(circle, ${D.gold}22 0%, transparent 70%)`,pointerEvents:"none"}}/>
@@ -187,8 +188,8 @@ const AccountCard=({account,usage,onDelete,onEdit}:{account:Account;usage?:{used
         </div>
       </div>
       <div style={{fontSize:15,fontWeight:700,color:D.t1,marginBottom:3,whiteSpace:"nowrap" as const,overflow:"hidden",textOverflow:"ellipsis"}}>{account.name}</div>
-      <div style={{fontSize:11,color:D.t2,marginBottom:isCredit||account.balance!=null?14:0}}>{accountKindLabel(account.kind)}</div>
-      {isCredit&&(
+      <div style={{fontSize:11,color:D.t2,marginBottom:isCreditWithLimit||account.balance!=null?14:0}}>{accountKindLabel(account.kind)}</div>
+      {isCreditWithLimit&&(
         <div>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
             <span style={{fontSize:13,fontWeight:800,color:D.t1}}>{money(usage?.used||0,sym(account.currency),true)}</span>
@@ -197,7 +198,12 @@ const AccountCard=({account,usage,onDelete,onEdit}:{account:Account;usage?:{used
           <Prog val={pct} col={pct>85?D.rose:D.gold} h={4}/>
         </div>
       )}
-      {!isCredit&&account.balance!=null&&(
+      {isCreditCard&&!isCreditWithLimit&&(
+        <div style={{fontSize:20,fontWeight:800,color:(account.balance||0)>0?D.rose:D.teal,fontVariantNumeric:"tabular-nums"}}>
+          {(account.balance||0)>0?`Owed ${money(account.balance||0,sym(account.currency),true)}`:"No balance owed"}
+        </div>
+      )}
+      {!isCreditCard&&account.balance!=null&&(
         <div>
           <div style={{fontSize:20,fontWeight:800,color:account.balance<0?D.rose:D.t1,fontVariantNumeric:"tabular-nums"}}>{money(account.balance,sym(account.currency),true)}</div>
           {account.creditLimit!=null&&(
@@ -560,8 +566,8 @@ const AddAccountForm=({editing,onAdd,onEdit,onClose,defCur}:{editing?:Account;on
         {ACCOUNT_KINDS.map(k=><Chip key={k.v} label={k.l} active={kind===k.v} color={D.gold} onClick={()=>setKind(k.v)}/>)}
       </div>
     </div>
-    <Inp label="Current Balance" type="number" val={balance} onChange={setBalance} placeholder={`${sym(cur)} 0.00`}
-      hint={kind==="credit_card"?"Enter as negative if you currently owe money on this card — it'll show up in Debts automatically.":undefined}/>
+    <Inp label={kind==="credit_card"?"Amount Currently Owed":"Current Balance"} type="number" val={balance} onChange={setBalance} placeholder={`${sym(cur)} 0.00`}
+      hint={kind==="credit_card"?"How much is on the card right now (a positive number). This shows up in Debts automatically — set it back to 0 once it's paid off.":"Go negative if this account is overdrawn — it'll show up in Debts automatically until it's back to 0 or above."}/>
     <Inp label={kind==="credit_card"?"Credit Limit (optional)":"Limit (optional)"} type="number" val={limit} onChange={setLimit} placeholder={`${sym(cur)} 0.00`}/>
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     <PrimaryBtn label={editing?"Save Changes":"Add Account"} onClick={handle} color={D.gold} disabled={!ok}/>
@@ -745,11 +751,16 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     });
   },[]);
 
-  // Keeps a credit card's linked "Credit Card Spending" debt in sync with its manually-entered balance
-  // (negative balance = amount owed; remaining owed is kept equal to that amount, on top of any payments already recorded)
-  const syncCardDebt=useCallback(async(account:Account)=>{
-    const owed=Math.max(0,-(account.balance||0));
-    const existing=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===account.name.toLowerCase());
+  // A credit card's balance IS the amount currently owed (always entered as a positive number).
+  // A bank/crypto balance is money you have — only a negative balance (overdrawn) counts as owed.
+  const owedOn=(account:Account)=>account.kind==="credit_card"?Math.max(0,account.balance||0):Math.max(0,-(account.balance||0));
+  const debtDescFor=(kind:AccountKind)=>kind==="credit_card"?"Credit Card Spending":"Account Overdraft";
+  // Keeps an account's linked debt in sync with its manually-entered balance (remaining owed is kept
+  // equal to that amount, on top of any payments already recorded against the linked debt)
+  const syncAccountDebt=useCallback(async(account:Account)=>{
+    const owed=owedOn(account);
+    const desc=debtDescFor(account.kind);
+    const existing=debts.find(d=>d.description===desc&&d.personBank.toLowerCase()===account.name.toLowerCase());
     if(existing){
       const paidSoFar=existing.payments.reduce((s,p)=>s+p.amount,0);
       const newTotal=owed+paidSoFar;
@@ -758,7 +769,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         setDebts(p=>p.map(d=>d.id===existing.id?{...d,totalAmount:newTotal}:d));
       }
     }else if(owed>0){
-      const newDebt=await db.insertDebt(userId,{personBank:account.name,totalAmount:owed,currency:account.currency,description:"Credit Card Spending"});
+      const newDebt=await db.insertDebt(userId,{personBank:account.name,totalAmount:owed,currency:account.currency,description:desc});
       setDebts(p=>[newDebt,...p]);
     }
   },[debts,userId]);
@@ -767,18 +778,18 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     try{
       const saved=await db.insertAccount(userId,{name:a.name,kind:a.kind,creditLimit:a.creditLimit,balance:a.balance,currency:a.currency});
       setAccounts(p=>[saved,...p]);
-      if(saved.kind==="credit_card")await syncCardDebt(saved);
+      await syncAccountDebt(saved);
       showToast("Account added");
     }catch(err){console.error(err);window.alert("Couldn't save that. Please try again.");}
-  },[userId,showToast,syncCardDebt]);
+  },[userId,showToast,syncAccountDebt]);
   const updateAccount=useCallback(async(original:Account,edited:Account)=>{
     try{
       const saved=await db.updateAccount(original.id,{name:edited.name,kind:edited.kind,creditLimit:edited.creditLimit,balance:edited.balance,currency:edited.currency});
       setAccounts(p=>p.map(a=>a.id===saved.id?saved:a));
-      if(saved.kind==="credit_card")await syncCardDebt(saved);
+      await syncAccountDebt(saved);
       showToast("Changes saved");
     }catch(err){console.error(err);window.alert("Couldn't save changes. Please try again.");}
-  },[showToast,syncCardDebt]);
+  },[showToast,syncAccountDebt]);
   const delAccount=useCallback((id:string)=>{
     setAccounts(p=>p.filter(a=>a.id!==id));
     db.deleteAccount(id).catch(err=>console.error(err));
@@ -849,7 +860,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const totalDebtOrig=debts.reduce((s,d)=>s+toBase(d.totalAmount,d.currency),0);
   const netPos=myCut+perIn-perOut-totalDebtLeft+(settings.savings||0);
   const bankMoney=accounts.filter(a=>a.kind==="bank").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
-  const creditMoney=accounts.filter(a=>a.kind==="credit_card").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
+  const creditMoney=accounts.filter(a=>a.kind==="credit_card").reduce((s,a)=>s-toBase(a.balance||0,a.currency),0);
   const cryptoMoney=accounts.filter(a=>a.kind==="crypto").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
   const totalAccountsMoney=bankMoney+creditMoney+cryptoMoney;
 
@@ -1225,7 +1236,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         const left=Math.max(0,debt.totalAmount-paid);
         const pct=debt.totalAmount>0?(paid/debt.totalAmount)*100:0;
         const ds=sym(debt.currency);
-        const linkedAccount=debt.description==="Credit Card Spending"?accounts.find(a=>a.kind==="credit_card"&&a.name.toLowerCase()===debt.personBank.toLowerCase()):undefined;
+        const linkedAccount=(debt.description==="Credit Card Spending"||debt.description==="Account Overdraft")?accounts.find(a=>a.name.toLowerCase()===debt.personBank.toLowerCase()):undefined;
         const due=daysUntil(debt.dueDate);
         const dueBadge=due!==null?(due<0?{l:"Overdue",c:D.rose}:due<=7?{l:`${due}d left`,c:D.gold}:{l:`${due}d left`,c:D.teal}):null;
         return(
