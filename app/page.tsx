@@ -14,6 +14,7 @@ const CURRENCIES = [
   {code:"USD",symbol:"$",name:"US Dollar"},{code:"EUR",symbol:"€",name:"Euro"},{code:"GBP",symbol:"£",name:"British Pound"},
   {code:"AED",symbol:"د.إ",name:"UAE Dirham"},{code:"SAR",symbol:"ر.س",name:"Saudi Riyal"},{code:"TRY",symbol:"₺",name:"Turkish Lira"},
   {code:"SYP",symbol:"ل.س",name:"Syrian Pound"},{code:"EGP",symbol:"ج.م",name:"Egyptian Pound"},{code:"JOD",symbol:"د.أ",name:"Jordanian Dinar"},{code:"KWD",symbol:"د.ك",name:"Kuwaiti Dinar"},
+  {code:"LBP",symbol:"ل.ل",name:"Lebanese Pound"},
 ];
 const PERSONAL_OUT_CATS = ["Food & Dining","Transport","Shopping","Healthcare","Groceries","Coffee & Cafes","Entertainment","Education","Clothing","Other"];
 const PERSONAL_IN_CATS = ["My Company Cut","Freelance","Investment Return","Rental Income","Gift","Side Income","Other"];
@@ -114,6 +115,7 @@ const IC={
   filter:["M22 3H2l8 9.46V19l4 2v-8.54z"],
   chevron:"M9 18l6-6-6-6",
   grip:"M4 7h16M4 12h16M4 17h16",
+  scan:["M3 7V5a2 2 0 0 1 2-2h2","M17 3h2a2 2 0 0 1 2 2v2","M21 17v2a2 2 0 0 1-2 2h-2","M7 21H5a2 2 0 0 1-2-2v-2","M3 12h18"],
 
 };
 
@@ -288,7 +290,7 @@ const Sel=({label,val,onChange,opts}:{label:string;val:string;onChange:(v:string
   </div>
 );
 
-const PrimaryBtn=({label,onClick,color,disabled,icon}:{label:string;onClick:()=>void;color?:string;disabled?:boolean;icon?:string})=>{
+const PrimaryBtn=({label,onClick,color,disabled,icon}:{label:string;onClick:()=>void;color?:string;disabled?:boolean;icon?:string|string[]})=>{
   const c=color||D.gold;
   return(
     <button onClick={onClick} disabled={disabled}
@@ -545,6 +547,53 @@ const PayForm=({debt,onPay,onClose}:{debt:Debt;onPay:(n:number,note:string,date:
   </>);
 };
 
+interface ImportRow { id:string; date:string; description:string; amount:string; currency:string; scope:"personal"|"company"; category:string; accountId?:string; }
+
+const ImportReviewSheet=({rows,accounts,companyCategories,onImport,onClose}:{rows:ImportRow[];accounts:Account[];companyCategories:string[];onImport:(rows:ImportRow[])=>Promise<void>;onClose:()=>void})=>{
+  const [list,setList]=useState(rows);
+  const [importing,setImporting]=useState(false);
+  const update=(id:string,patch:Partial<ImportRow>)=>setList(p=>p.map(r=>r.id===id?{...r,...patch}:r));
+  const remove=(id:string)=>setList(p=>p.filter(r=>r.id!==id));
+  const handle=async()=>{
+    setImporting(true);
+    await onImport(list.filter(r=>!!r.amount&&parseFloat(r.amount)>0));
+    setImporting(false);
+    onClose();
+  };
+  if(list.length===0)return(<>
+    <EmptyState icon={IC.scan} color={D.gold} title="Nothing found" sub="No expense transactions were detected in that file."/>
+    <PrimaryBtn label="Close" onClick={onClose} color={D.gold}/>
+  </>);
+  return(<>
+    <div style={{fontSize:13,color:D.t2}}>{list.length} expense{list.length!==1?"s":""} found — review before importing. Remove any that look wrong.</div>
+    {list.map(r=>{
+      const baseCats=r.scope==="company"?COMPANY_OUT_CATS:PERSONAL_OUT_CATS;
+      const cats=r.scope==="company"?[...baseCats,...companyCategories.filter(c=>!baseCats.includes(c))]:baseCats;
+      return(
+        <div key={r.id} style={{background:D.s3,border:`1px solid ${D.b1}`,borderRadius:16,padding:16,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{fontSize:12,color:D.t3}}>Expense</div>
+            <button onClick={()=>remove(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:D.t3}}><G d={IC.x} s={15}/></button>
+          </div>
+          <Inp label="Description" val={r.description} onChange={v=>update(r.id,{description:v})}/>
+          <div style={{display:"flex",gap:8}}>
+            <div style={{flex:1}}><Inp label="Amount" type="number" val={r.amount} onChange={v=>update(r.id,{amount:v})}/></div>
+            <div style={{width:100}}><Sel label="Currency" val={r.currency} onChange={v=>update(r.id,{currency:v})} opts={CURRENCIES.map(c=>({v:c.code,l:c.code}))}/></div>
+          </div>
+          <Inp label="Date" type="date" val={r.date} onChange={v=>update(r.id,{date:v})}/>
+          <div style={{display:"flex",gap:8}}>
+            <Chip label="Personal" active={r.scope==="personal"} color={D.violet} onClick={()=>update(r.id,{scope:"personal",category:""})}/>
+            <Chip label="Company" active={r.scope==="company"} color={D.gold} onClick={()=>update(r.id,{scope:"company",category:""})}/>
+          </div>
+          <ChipGroup label="Category" val={r.category} onChange={v=>update(r.id,{category:v})} opts={cats} color={r.scope==="company"?D.gold:D.rose}/>
+          <AccountPicker label="Paid With" val={r.accountId} onChange={v=>update(r.id,{accountId:v})} accounts={accounts} color={D.rose}/>
+        </div>
+      );
+    })}
+    <PrimaryBtn label={importing?"Importing…":`Import ${list.length} Expense${list.length!==1?"s":""}`} onClick={handle} color={D.gold} disabled={importing||list.length===0}/>
+  </>);
+};
+
 const AddAccountForm=({editing,onAdd,onEdit,onClose,defCur}:{editing?:Account;onAdd:(a:Account)=>void;onEdit?:(original:Account,edited:Account)=>void;onClose:()=>void;defCur:string})=>{
   const [name,setName]=useState(editing?.name||"");const [kind,setKind]=useState<AccountKind>(editing?.kind||"bank");
   const [limit,setLimit]=useState(editing?.creditLimit!=null?String(editing.creditLimit):"");
@@ -624,7 +673,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const [debts,setDebts]=useState<Debt[]>([]);
   const [accounts,setAccounts]=useState<Account[]>([]);
   const [settings,setSettings]=useState<Settings>({currency:"USD",name:"",savings:0,companyCategories:[]});
-  const [sheet,setSheet]=useState<{open:boolean;key:string;debt?:Debt;editTx?:Tx;editMonthly?:Monthly;editDebt?:Debt;editAccount?:Account}>({open:false,key:""});
+  const [sheet,setSheet]=useState<{open:boolean;key:string;debt?:Debt;editTx?:Tx;editMonthly?:Monthly;editDebt?:Debt;editAccount?:Account;importRows?:ImportRow[]}>({open:false,key:""});
   const [ready,setReady]=useState(false);
   const [toast,setToast]=useState("");
   const showToast=useCallback((msg:string)=>{
@@ -804,6 +853,60 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     showToast("Order saved");
   },[showToast]);
 
+  // Bulk-imports reviewed expense rows from a receipt/screenshot scan. Keeps its own running
+  // balance/debt totals per account instead of reusing adjustAccountBalance/adjustCardDebt, since
+  // those read from React state that won't have updated yet between rows hitting the same account.
+  const importTxs=useCallback(async(rows:ImportRow[])=>{
+    if(rows.length===0)return;
+    try{
+      const savedTxs:Tx[]=[];
+      const runningBalance=new Map<string,number>();
+      const runningDebt=new Map<string,{id?:string;total:number}>();
+      for(const r of rows){
+        const amount=parseFloat(r.amount)||0;
+        if(amount<=0)continue;
+        const type=(r.scope==="company"?"company_out":"personal_out") as TxType;
+        const category=r.category||"Other";
+        const saved=await db.insertTx(userId,{type,amount,description:r.description||category,category,date:r.date||today(),notes:undefined,currency:r.currency,myShare:undefined,accountId:r.accountId});
+        savedTxs.push(saved);
+        const account=r.accountId?accounts.find(a=>a.id===r.accountId):undefined;
+        if(account){
+          if(account.kind==="credit_card"){
+            if(!runningDebt.has(account.id)){
+              const existing=debts.find(d=>d.description==="Credit Card Spending"&&d.personBank.toLowerCase()===account.name.toLowerCase());
+              runningDebt.set(account.id,{id:existing?.id,total:existing?.totalAmount||0});
+            }
+            const cur=runningDebt.get(account.id)!;
+            runningDebt.set(account.id,{id:cur.id,total:cur.total+amount});
+          }else if(account.balance!=null){
+            if(!runningBalance.has(account.id))runningBalance.set(account.id,account.balance||0);
+            runningBalance.set(account.id,runningBalance.get(account.id)!-amount);
+          }
+        }
+      }
+      for(const [accountId,newBalance] of runningBalance)await db.setAccountBalance(accountId,newBalance);
+      const newDebtsCreated:Debt[]=[];
+      for(const [accountId,{id,total}] of runningDebt){
+        if(id)await db.setDebtTotal(id,total);
+        else{
+          const account=accounts.find(a=>a.id===accountId)!;
+          const newDebt=await db.insertDebt(userId,{personBank:account.name,totalAmount:total,currency:account.currency,description:"Credit Card Spending"});
+          newDebtsCreated.push(newDebt);
+        }
+      }
+      setTxs(p=>[...savedTxs,...p]);
+      setAccounts(p=>p.map(a=>runningBalance.has(a.id)?{...a,balance:runningBalance.get(a.id)}:a));
+      setDebts(p=>{
+        const updated=p.map(d=>{
+          const entry=[...runningDebt.entries()].find(([,v])=>v.id===d.id);
+          return entry?{...d,totalAmount:entry[1].total}:d;
+        });
+        return [...newDebtsCreated,...updated];
+      });
+      showToast(`Imported ${savedTxs.length} expense${savedTxs.length!==1?"s":""}`);
+    }catch(err){console.error(err);window.alert("Some transactions couldn't be imported. Please check and try again.");}
+  },[userId,accounts,debts,showToast]);
+
   const addDebt=useCallback(async(d:Debt)=>{
     try{
       const saved=await db.insertDebt(userId,{personBank:d.personBank,totalAmount:d.totalAmount,currency:d.currency,description:d.description,dueDate:d.dueDate,notes:d.notes});
@@ -833,11 +936,13 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 
   // ── Derived numbers
   // Converts an amount in `currency` into the account's base currency (settings.currency),
-  // using the manual USD/TRY rate from Settings. Any other currency pair is left unconverted.
+  // using the manual USD/TRY and USD/LBP rates from Settings. Any other currency pair is left unconverted.
   const toBase=(amount:number,currency:string)=>{
     if(currency===settings.currency)return amount;
     if(currency==="USD"&&settings.currency==="TRY")return settings.usdTryRate?amount*settings.usdTryRate:amount;
     if(currency==="TRY"&&settings.currency==="USD")return settings.usdTryRate?amount/settings.usdTryRate:amount;
+    if(currency==="USD"&&settings.currency==="LBP")return settings.usdLbpRate?amount*settings.usdLbpRate:amount;
+    if(currency==="LBP"&&settings.currency==="USD")return settings.usdLbpRate?amount/settings.usdLbpRate:amount;
     return amount;
   };
   const compIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
@@ -883,7 +988,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     setTimeout(()=>window.location.reload(),150);
   };
 
-  const openSheet=(key:string,opts?:{debt?:Debt;editTx?:Tx;editMonthly?:Monthly;editDebt?:Debt;editAccount?:Account})=>setSheet({open:true,key,...opts});
+  const openSheet=(key:string,opts?:{debt?:Debt;editTx?:Tx;editMonthly?:Monthly;editDebt?:Debt;editAccount?:Account;importRows?:ImportRow[]})=>setSheet({open:true,key,...opts});
   const closeSheet=()=>setSheet({open:false,key:""});
 
   if(!ready)return<LoadingScreen fontFamily={font.style.fontFamily}/>;
@@ -1313,6 +1418,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [username,setUsername]=useState(settings.username||"");
     const [cur,setCur]=useState(settings.currency);
     const [rate,setRate]=useState(settings.usdTryRate!=null?String(settings.usdTryRate):"");
+    const [lbpRate,setLbpRate]=useState(settings.usdLbpRate!=null?String(settings.usdLbpRate):"");
     const [saved,setSaved]=useState(false);
     const [saveErr,setSaveErr]=useState("");
     const [email,setEmail]=useState("");
@@ -1321,6 +1427,40 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [newPw,setNewPw]=useState("");
     const [pwBusy,setPwBusy]=useState(false);
     const [pwMsg,setPwMsg]=useState<{ok:boolean;text:string}|null>(null);
+    const importInputRef=useRef<HTMLInputElement>(null);
+    const [importBusy,setImportBusy]=useState(false);
+    const [importErr,setImportErr]=useState("");
+    const handleImportFile=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+      const file=e.target.files?.[0];
+      e.target.value="";
+      if(!file)return;
+      setImportBusy(true);setImportErr("");
+      try{
+        const {data:{session}}=await supabase.auth.getSession();
+        const token=session?.access_token;
+        if(!token)throw new Error("Not signed in.");
+        const form=new FormData();
+        form.append("file",file);
+        const res=await fetch("/api/import",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:form});
+        const data=await res.json();
+        if(!res.ok)throw new Error(data.error||"Import failed.");
+        const rows:ImportRow[]=(data.transactions||[]).map((t:{date?:string;description?:string;amount?:number;currency?:string})=>({
+          id:uid(),
+          date:t.date||today(),
+          description:t.description||"",
+          amount:t.amount!=null?String(t.amount):"",
+          currency:t.currency||settings.currency,
+          scope:"personal" as const,
+          category:"Other",
+          accountId:undefined,
+        }));
+        openSheet("import_review",{importRows:rows});
+      }catch(err){
+        setImportErr(err instanceof Error?err.message:"Couldn't read that file. Please try again.");
+      }finally{
+        setImportBusy(false);
+      }
+    };
     useEffect(()=>{supabase.auth.getUser().then(({data})=>{if(data.user?.email)setEmail(data.user.email);});},[]);
     const changeEmail=async()=>{
       if(!email.includes("@")){setEmailMsg({ok:false,text:"Enter a valid email address."});return;}
@@ -1351,7 +1491,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const save=async()=>{
       setSaveErr("");
       const cleanUsername=username.trim().toLowerCase().replace(/[^a-z0-9_.]/g,"");
-      const next={...settings,currency:cur,name,username:cleanUsername||undefined,usdTryRate:rate?parseFloat(rate)||undefined:undefined};
+      const next={...settings,currency:cur,name,username:cleanUsername||undefined,usdTryRate:rate?parseFloat(rate)||undefined:undefined,usdLbpRate:lbpRate?parseFloat(lbpRate)||undefined:undefined};
       try{
         await db.upsertSettings(userId,next);
         setSettings(next);
@@ -1422,11 +1562,12 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 
         {/* Exchange Rate */}
         <SectionCard icon={IC.coin} title="Exchange Rate">
-          <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Your default currency is {settings.currency}. Set how many Turkish Lira one US Dollar is worth, so totals mixing USD and TRY add up correctly. Update it anytime rates change.</div>
+          <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Your default currency is {settings.currency}. Set manual rates so totals mixing currencies add up correctly. Update anytime rates change.</div>
           <div style={{fontSize:11,color:D.t3}}>
-            Currently saved: {settings.usdTryRate!=null?`1 USD = ${settings.usdTryRate} TRY`:"not set yet"}
+            Currently saved: {settings.usdTryRate!=null?`1 USD = ${settings.usdTryRate} TRY`:"TRY rate not set"} · {settings.usdLbpRate!=null?`1 USD = ${settings.usdLbpRate} LBP`:"LBP rate not set"}
           </div>
           <Inp label="1 USD = ? TRY" type="number" val={rate} onChange={setRate} placeholder="e.g. 34.50"/>
+          <Inp label="1 USD = ? LBP" type="number" val={lbpRate} onChange={setLbpRate} placeholder="e.g. 89500"/>
           {!!rate&&parseFloat(rate)>0&&(
             <div style={{padding:"12px 16px",background:D.goldDim,border:`1px solid ${D.gold}33`,borderRadius:12}}>
               <div style={{fontSize:13,color:D.gold,fontWeight:700}}>Preview: $1 = ₺{parseFloat(rate).toFixed(2)}</div>
@@ -1456,6 +1597,14 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
               {accounts.map(a=><AccountCard key={a.id} account={a} usage={accountUsage(a)} onDelete={()=>delAccount(a.id)} onEdit={()=>openSheet("add_account",{editAccount:a})}/>)}
             </div>}
         </div>
+
+        {/* Import Expenses */}
+        <SectionCard icon={IC.scan} title="Import Expenses">
+          <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Upload a receipt PDF or a screenshot of your bank/crypto app — AI reads it and pulls out expense transactions (money out only) for you to review before anything is saved.</div>
+          <input ref={importInputRef} type="file" accept="image/*,application/pdf" style={{display:"none"}} onChange={handleImportFile}/>
+          <PrimaryBtn label={importBusy?"Reading…":"Scan a Receipt or Screenshot"} onClick={()=>importInputRef.current?.click()} color={D.gold} icon={IC.scan} disabled={importBusy}/>
+          {importErr&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{importErr}</div>}
+        </SectionCard>
 
         {/* Company Categories */}
         <SectionCard icon={IC.tag} title="Company Categories">
@@ -1523,6 +1672,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     pay_debt:{title:`Pay — ${sheet.debt?.personBank||""}`},
     add_account:{title:sheet.editAccount?"Edit Payment Account":"Add Payment Account"},
     reorder_accounts:{title:"Reorder Accounts"},
+    import_review:{title:"Review Imported Expenses",tall:true},
   };
 
   const sheetBody=()=>{
@@ -1532,6 +1682,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     if(k==="pay_debt"&&sheet.debt)return<PayForm debt={sheet.debt} onPay={(n,note,date)=>payDebt(sheet.debt!.id,n,note,date)} onClose={closeSheet}/>;
     if(k==="add_account")return<AddAccountForm editing={sheet.editAccount} onAdd={addAccount} onEdit={updateAccount} onClose={closeSheet} defCur={settings.currency}/>;
     if(k==="reorder_accounts")return<ReorderAccountsSheet accounts={accounts} onSave={reorderAccounts} onClose={closeSheet}/>;
+    if(k==="import_review"&&sheet.importRows)return<ImportReviewSheet rows={sheet.importRows} accounts={accounts} companyCategories={settings.companyCategories} onImport={importTxs} onClose={closeSheet}/>;
     if(k==="company_monthly")return<AddMonthlyForm scope="company" editing={sheet.editMonthly} onAdd={addMonthly} onEdit={updateMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;
     if(k==="personal_monthly")return<AddMonthlyForm scope="personal" editing={sheet.editMonthly} onAdd={addMonthly} onEdit={updateMonthly} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;
     if(["company_in","company_out","personal_in","personal_out"].includes(k))return<AddTxForm type={k as TxType} editing={sheet.editTx} onAdd={addTx} onEdit={updateTx} onClose={closeSheet} defCur={settings.currency} accounts={accounts} companyCategories={settings.companyCategories}/>;

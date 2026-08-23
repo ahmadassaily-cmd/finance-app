@@ -117,7 +117,7 @@ export async function fetchAll(userId: string) {
   );
 
   const settings: Settings = setRes.data
-    ? { currency: setRes.data.currency as string, name: setRes.data.name as string, savings: Number(setRes.data.savings ?? 0), username: (setRes.data.username as string) ?? undefined, companyCategories: (setRes.data.company_categories as string[]) ?? [], usdTryRate: setRes.data.usd_try_rate != null ? Number(setRes.data.usd_try_rate) : undefined }
+    ? { currency: setRes.data.currency as string, name: setRes.data.name as string, savings: Number(setRes.data.savings ?? 0), username: (setRes.data.username as string) ?? undefined, companyCategories: (setRes.data.company_categories as string[]) ?? [], usdTryRate: setRes.data.usd_try_rate != null ? Number(setRes.data.usd_try_rate) : undefined, usdLbpRate: setRes.data.usd_lbp_rate != null ? Number(setRes.data.usd_lbp_rate) : undefined }
     : { currency: "USD", name: "", savings: 0, companyCategories: [] };
 
   return {
@@ -284,7 +284,7 @@ export async function insertDebtPayment(userId: string, debtId: string, amount: 
 export async function upsertSettings(userId: string, s: Settings) {
   const { error } = await supabase
     .from("settings")
-    .upsert({ user_id: userId, currency: s.currency, name: s.name, savings: s.savings, username: s.username || null, company_categories: s.companyCategories, usd_try_rate: s.usdTryRate ?? null }, { onConflict: "user_id" });
+    .upsert({ user_id: userId, currency: s.currency, name: s.name, savings: s.savings, username: s.username || null, company_categories: s.companyCategories, usd_try_rate: s.usdTryRate ?? null, usd_lbp_rate: s.usdLbpRate ?? null }, { onConflict: "user_id" });
   if (error) throw error;
 }
 

@@ -5,4 +5,4 @@ export interface Tx { id:string; type:TxType; amount:number; description:string;
 export interface Monthly { id:string; scope:"personal"|"company"; name:string; amount:number; currency:string; dueDay:number; category:string; notes?:string; active:boolean; createdAt:string; accountId?:string; }
 export interface DebtPayment { id:string; date:string; amount:number; note?:string; }
 export interface Debt { id:string; personBank:string; totalAmount:number; currency:string; description:string; dueDate?:string; notes?:string; payments:DebtPayment[]; createdAt:string; }
-export interface Settings { currency:string; name:string; savings:number; username?:string; companyCategories:string[]; usdTryRate?:number; }
+export interface Settings { currency:string; name:string; savings:number; username?:string; companyCategories:string[]; usdTryRate?:number; usdLbpRate?:number; }
