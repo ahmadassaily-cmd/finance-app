@@ -14,6 +14,7 @@ function rowToTx(r: Record<string, unknown>): Tx {
     createdAt: r.created_at as string,
     myShare: r.my_share != null ? Number(r.my_share) : undefined,
     accountId: (r.account_id as string) ?? undefined,
+    isTransfer: (r.is_transfer as boolean) ?? false,
   };
 }
 
@@ -143,6 +144,7 @@ export async function insertTx(userId: string, t: Omit<Tx, "id" | "createdAt">):
       currency: t.currency,
       my_share: t.myShare ?? null,
       account_id: t.accountId ?? null,
+      is_transfer: t.isTransfer ?? false,
     })
     .select()
     .single();
@@ -168,6 +170,7 @@ export async function updateTx(id: string, t: Omit<Tx, "id" | "createdAt">): Pro
       currency: t.currency,
       my_share: t.myShare ?? null,
       account_id: t.accountId ?? null,
+      is_transfer: t.isTransfer ?? false,
     })
     .eq("id", id)
     .select()

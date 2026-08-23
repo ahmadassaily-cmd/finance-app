@@ -385,6 +385,7 @@ const TxRow=({tx,accounts,onDel,onEdit}:{tx:Tx;accounts:Account[];onDel:()=>void
           {isCompany&&!!tx.myShare&&(
             <span style={{fontSize:11,color:D.gold}}>· {money(tx.myShare,sym(tx.currency))} yours</span>
           )}
+          {tx.isTransfer&&<Badge label="Transfer" color={D.violet}/>}
         </div>
       </div>
       <div style={{flexShrink:0,textAlign:"right" as const}}>
@@ -437,6 +438,7 @@ const AddTxForm=({type,editing,onAdd,onEdit,onClose,defCur,accounts,companyCateg
   const [date,setDate]=useState(editing?.date||today());const [notes,setNotes]=useState(editing?.notes||"");const [cur,setCur]=useState(editing?.currency||defCur);
   const [myShare,setMyShare]=useState(editing?.myShare!=null?String(editing.myShare):"");
   const [accountId,setAccountId]=useState<string|undefined>(editing?.accountId);
+  const [isTransfer,setIsTransfer]=useState(editing?.isTransfer||false);
   const [more,setMore]=useState(!!editing);
   const isIn=type==="company_in"||type==="personal_in";
   const isCompany=type==="company_in"||type==="company_out";
@@ -446,7 +448,7 @@ const AddTxForm=({type,editing,onAdd,onEdit,onClose,defCur,accounts,companyCateg
   const ok=!!amt&&!!cat;
   const handle=()=>{
     if(!ok)return;
-    const tx:Tx={id:editing?.id||uid(),type,amount:parseFloat(amt),description:desc||cat,category:cat,date,notes,currency:cur,createdAt:editing?.createdAt||new Date().toISOString()};
+    const tx:Tx={id:editing?.id||uid(),type,amount:parseFloat(amt),description:desc||cat,category:cat,date,notes,currency:cur,createdAt:editing?.createdAt||new Date().toISOString(),isTransfer};
     if(isCompany&&myShare)tx.myShare=parseFloat(myShare)||0;
     if(accountId)tx.accountId=accountId;
     if(editing&&onEdit)onEdit(editing,tx);else onAdd(tx);
@@ -459,6 +461,17 @@ const AddTxForm=({type,editing,onAdd,onEdit,onClose,defCur,accounts,companyCateg
       <Inp label={type==="company_in"?"How much of this is yours? (optional)":"How much are you personally paying? (optional)"} type="number" val={myShare} onChange={setMyShare} placeholder={`${sym(cur)} 0.00`}/>
     )}
     <AccountPicker label={isIn?"Deposited To":"Paid With"} val={accountId} onChange={setAccountId} accounts={accounts} color={c}/>
+    <div>
+      <button type="button" onClick={()=>setIsTransfer(v=>!v)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:isTransfer?D.goldDim:D.s3,border:`1px solid ${isTransfer?D.gold:D.b1}`,borderRadius:14,padding:"12px 14px",cursor:"pointer",fontFamily:"inherit",textAlign:"left" as const}}>
+        <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${isTransfer?D.gold:D.t3}`,background:isTransfer?D.gold:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          {isTransfer&&<G d={IC.check} s={12} c="#fff" sw={3}/>}
+        </div>
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:isTransfer?D.gold:D.t1}}>This is a transfer between my own accounts</div>
+          <div style={{fontSize:11,color:D.t2,marginTop:1}}>e.g. paying off a credit card, a cash advance to your bank — won't count as income or expense</div>
+        </div>
+      </button>
+    </div>
     <Inp label="Description (optional)" val={desc} onChange={setDesc} placeholder={cat||"What is this for?"}/>
     <Sel label="Currency" val={cur} onChange={setCur} opts={CURRENCIES.map(c=>({v:c.code,l:`${c.code} (${c.symbol}) — ${c.name}`}))}/>
     {!more
@@ -547,7 +560,7 @@ const PayForm=({debt,onPay,onClose}:{debt:Debt;onPay:(n:number,note:string,date:
   </>);
 };
 
-interface ImportRow { id:string; date:string; description:string; amount:string; currency:string; direction:"in"|"out"; scope:"personal"|"company"; category:string; accountId?:string; expanded?:boolean; }
+interface ImportRow { id:string; date:string; description:string; amount:string; currency:string; direction:"in"|"out"; scope:"personal"|"company"; category:string; accountId?:string; expanded?:boolean; isTransfer?:boolean; }
 
 const ImportReviewSheet=({rows,accounts,companyCategories,onImport,onClose}:{rows:ImportRow[];accounts:Account[];companyCategories:string[];onImport:(rows:ImportRow[])=>Promise<void>;onClose:()=>void})=>{
   const [list,setList]=useState(rows);
@@ -603,7 +616,9 @@ const ImportReviewSheet=({rows,accounts,companyCategories,onImport,onClose}:{row
             </div>
             <ChipGroup label="Category" val={r.category} onChange={v=>update(r.id,{category:v})} opts={cats} color={c}/>
             <AccountPicker label={r.direction==="in"?"Deposited To":"Paid With"} val={r.accountId} onChange={v=>update(r.id,{accountId:v})} accounts={accounts} color={c}/>
+            <Chip label="Transfer between my own accounts" active={!!r.isTransfer} color={D.violet} onClick={()=>update(r.id,{isTransfer:!r.isTransfer})}/>
           </>)}
+          {r.isTransfer&&!r.expanded&&<div style={{fontSize:10,color:D.violet,fontWeight:700}}>TRANSFER</div>}
         </div>
       );
     })}
@@ -754,7 +769,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 
   const addTx=useCallback(async(t:Tx)=>{
     try{
-      const saved=await db.insertTx(userId,{type:t.type,amount:t.amount,description:t.description,category:t.category,date:t.date,notes:t.notes,currency:t.currency,myShare:t.myShare,accountId:t.accountId});
+      const saved=await db.insertTx(userId,{type:t.type,amount:t.amount,description:t.description,category:t.category,date:t.date,notes:t.notes,currency:t.currency,myShare:t.myShare,accountId:t.accountId,isTransfer:t.isTransfer});
       setTxs(p=>[saved,...p]);
       const isIncome=saved.type==="personal_in"||saved.type==="company_in";
       const account=saved.accountId?accounts.find(a=>a.id===saved.accountId):undefined;
@@ -765,7 +780,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 
   const updateTx=useCallback(async(original:Tx,edited:Tx)=>{
     try{
-      const saved=await db.updateTx(original.id,{type:edited.type,amount:edited.amount,description:edited.description,category:edited.category,date:edited.date,notes:edited.notes,currency:edited.currency,myShare:edited.myShare,accountId:edited.accountId});
+      const saved=await db.updateTx(original.id,{type:edited.type,amount:edited.amount,description:edited.description,category:edited.category,date:edited.date,notes:edited.notes,currency:edited.currency,myShare:edited.myShare,accountId:edited.accountId,isTransfer:edited.isTransfer});
       setTxs(p=>p.map(t=>t.id===saved.id?saved:t));
       const isIncome=saved.type==="personal_in"||saved.type==="company_in";
       const oldAccount=original.accountId?accounts.find(a=>a.id===original.accountId):undefined;
@@ -885,7 +900,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         const isIncome=r.direction==="in";
         const type=`${r.scope}_${r.direction}` as TxType;
         const category=r.category||"Other";
-        const saved=await db.insertTx(userId,{type,amount,description:r.description||category,category,date:r.date||today(),notes:undefined,currency:r.currency,myShare:undefined,accountId:r.accountId});
+        const saved=await db.insertTx(userId,{type,amount,description:r.description||category,category,date:r.date||today(),notes:undefined,currency:r.currency,myShare:undefined,accountId:r.accountId,isTransfer:r.isTransfer});
         savedTxs.push(saved);
         const account=r.accountId?accounts.find(a=>a.id===r.accountId):undefined;
         if(account){
@@ -963,20 +978,20 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     if(currency==="LBP"&&settings.currency==="USD")return settings.usdLbpRate?amount/settings.usdLbpRate:amount;
     return amount;
   };
-  const compIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
-  const compOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const compIn=txs.filter(t=>t.type==="company_in"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const compOut=txs.filter(t=>t.type==="company_out"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const compMonthlyActive=monthly.filter(m=>m.scope==="company"&&m.active);
   const compMonthlyTotal=compMonthlyActive.reduce((s,m)=>s+toBase(m.amount,m.currency),0);
   const compProfit=compIn-compOut;
-  const myCutIn=txs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
-  const myCutOut=txs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
+  const myCutIn=txs.filter(t=>t.type==="company_in"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
+  const myCutOut=txs.filter(t=>t.type==="company_out"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
   const myCut=myCutIn-myCutOut;
   const isCreditTx=(t:Tx)=>accounts.find(a=>a.id===t.accountId)?.kind==="credit_card";
-  const perIn=txs.filter(t=>t.type==="personal_in"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
-  const perOut=txs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
-  const personalIncomeTotal=txs.filter(t=>t.type==="personal_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
-  const personalCash=txs.filter(t=>t.type==="personal_in"&&!t.accountId).reduce((s,t)=>s+toBase(t.amount,t.currency),0)
-    -txs.filter(t=>t.type==="personal_out"&&!t.accountId).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const perIn=txs.filter(t=>t.type==="personal_in"&&!isCreditTx(t)&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const perOut=txs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const personalIncomeTotal=txs.filter(t=>t.type==="personal_in"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const personalCash=txs.filter(t=>t.type==="personal_in"&&!t.accountId&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0)
+    -txs.filter(t=>t.type==="personal_out"&&!t.accountId&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const perMonthlyActive=monthly.filter(m=>m.scope==="personal"&&m.active);
   const perMonthlyTotal=perMonthlyActive.reduce((s,m)=>s+toBase(m.amount,m.currency),0);
   const perMonthly=monthly.filter(m=>m.scope==="personal");
@@ -1025,10 +1040,10 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   // This month
   const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
   const mTxs=txs.filter(t=>{const d=new Date(t.date);return d.getMonth()===cm&&d.getFullYear()===cy;});
-  const mCompIn=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
-  const mCompOut=mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
-  const mMyCut=mTxs.filter(t=>t.type==="company_in").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0)-mTxs.filter(t=>t.type==="company_out").reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
-  const mPerOut=mTxs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const mCompIn=mTxs.filter(t=>t.type==="company_in"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const mCompOut=mTxs.filter(t=>t.type==="company_out"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const mMyCut=mTxs.filter(t=>t.type==="company_in"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0)-mTxs.filter(t=>t.type==="company_out"&&!t.isTransfer).reduce((s,t)=>s+toBase(t.myShare||0,t.currency),0);
+  const mPerOut=mTxs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)&&!t.isTransfer).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
 
   const upcomingMonthly=monthly.filter(m=>m.active).map(m=>({...m,daysUntil:daysUntilDueDay(m.dueDay)})).sort((a,b)=>a.daysUntil-b.daysUntil);
   const dueSoonCount=upcomingMonthly.filter(m=>m.daysUntil<=7).length;
@@ -1064,7 +1079,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         const res=await fetch("/api/import",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:form});
         const data=await res.json();
         if(!res.ok)throw new Error(data.error||`Couldn't read "${files[i].name}".`);
-        const rows:ImportRow[]=(data.transactions||[]).map((t:{date?:string;description?:string;amount?:number;currency?:string;direction?:string})=>({
+        const rows:ImportRow[]=(data.transactions||[]).map((t:{date?:string;description?:string;amount?:number;currency?:string;direction?:string;isTransfer?:boolean})=>({
           id:uid(),
           date:t.date||today(),
           description:t.description||"",
@@ -1074,6 +1089,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           scope:"personal" as const,
           category:"Other",
           accountId:undefined,
+          isTransfer:!!t.isTransfer,
         }));
         allRows.push(...rows);
       }
