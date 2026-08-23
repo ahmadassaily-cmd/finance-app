@@ -851,6 +851,9 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const isCreditTx=(t:Tx)=>accounts.find(a=>a.id===t.accountId)?.kind==="credit_card";
   const perIn=txs.filter(t=>t.type==="personal_in"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const perOut=txs.filter(t=>t.type==="personal_out"&&!isCreditTx(t)).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const personalIncomeTotal=txs.filter(t=>t.type==="personal_in").reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+  const personalCash=txs.filter(t=>t.type==="personal_in"&&!t.accountId).reduce((s,t)=>s+toBase(t.amount,t.currency),0)
+    -txs.filter(t=>t.type==="personal_out"&&!t.accountId).reduce((s,t)=>s+toBase(t.amount,t.currency),0);
   const perMonthlyActive=monthly.filter(m=>m.scope==="personal"&&m.active);
   const perMonthlyTotal=perMonthlyActive.reduce((s,m)=>s+toBase(m.amount,m.currency),0);
   const perMonthly=monthly.filter(m=>m.scope==="personal");
@@ -858,7 +861,6 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const totalDebtLeft=debts.reduce((s,d)=>s+toBase(Math.max(0,debtRemaining(d)),d.currency),0);
   const totalDebtPaid=debts.reduce((s,d)=>s+toBase(d.payments.reduce((ss,p)=>ss+p.amount,0),d.currency),0);
   const totalDebtOrig=debts.reduce((s,d)=>s+toBase(d.totalAmount,d.currency),0);
-  const netPos=myCut+perIn-perOut+(settings.savings||0);
   const bankMoney=accounts.filter(a=>a.kind==="bank").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
   const creditMoney=accounts.filter(a=>a.kind==="credit_card").reduce((s,a)=>s-toBase(a.balance||0,a.currency),0);
   const cryptoMoney=accounts.filter(a=>a.kind==="crypto").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
@@ -892,13 +894,13 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
       {/* Hero */}
       <div style={{padding:"40px 22px 28px",position:"relative",overflow:"hidden"}}>
         <div style={{fontSize:13,color:D.t2,marginBottom:12}}>
-          {settings.name?`Welcome back, ${settings.name}`:"Total net position"}
+          {settings.name?`Welcome back, ${settings.name}`:"Total Money"}
         </div>
         <div style={{fontSize:48,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1,marginBottom:22,fontVariantNumeric:"tabular-nums",color:D.t1}}>
-          {netPos>=0?"+":"-"}{money(Math.abs(netPos),S,true)}
+          {totalAccountsMoney<0?"-":""}{money(Math.abs(totalAccountsMoney),S,true)}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",rowGap:16,columnGap:24}}>
-          {[{l:"My Cut",v:money(myCut,S,true),c:D.gold},{l:"Savings",v:money(settings.savings||0,S,true),c:D.gold},{l:"Personal",v:money(perIn-perOut,S,true),c:perIn-perOut>=0?D.teal:D.rose},{l:"Debts Left",v:money(totalDebtLeft,S,true),c:D.rose}].map(s=>(
+          {[{l:"Savings",v:money(settings.savings||0,S,true),c:D.gold},{l:"Personal Income",v:money(personalIncomeTotal,S,true),c:D.teal},{l:"Personal Cash",v:money(personalCash,S,true),c:personalCash>=0?D.t1:D.rose},{l:"My Cut",v:money(myCut,S,true),c:D.gold},{l:"Debts Left",v:money(totalDebtLeft,S,true),c:D.rose}].map(s=>(
             <div key={s.l}><div style={{fontSize:11,color:D.t3,marginBottom:4}}>{s.l}</div><div style={{fontSize:15,fontWeight:800,color:s.c,fontVariantNumeric:"tabular-nums"}}>{s.v}</div></div>
           ))}
         </div>
