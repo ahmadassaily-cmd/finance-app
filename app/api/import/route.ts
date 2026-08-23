@@ -9,17 +9,18 @@ const authClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
 );
 
-const EXTRACTION_PROMPT = `You are reading a bank receipt, a screenshot of a banking app's transaction list, or a screenshot of a crypto exchange. Extract ONLY the transactions that represent money going OUT (expenses, purchases, withdrawals, transfers sent) — a debit, usually shown with a minus sign or in a "spent"/"sent" context. Skip anything that is money coming IN (deposits, income, credits, transfers received).
+const EXTRACTION_PROMPT = `You are reading a bank receipt, a screenshot of a banking app's transaction list, an ATM deposit/withdrawal confirmation, or a screenshot of a crypto exchange. Extract EVERY distinct transaction visible — both money going OUT (expenses, purchases, withdrawals, transfers sent) and money coming IN (deposits, transfers received, ATM deposits, income).
 
-If a transfer, withdrawal, or transaction shows a separate commission/fee line (e.g. "MASRAF", "KOMİSYON", "KOMİSYON TOPLAMI", "BSMV", "ücret", "fee", "commission"), include that fee as its OWN separate expense entry — do not fold it into the main transaction's amount and do not drop it.
+If a transfer, withdrawal, or transaction shows a separate commission/fee line (e.g. "MASRAF", "KOMİSYON", "KOMİSYON TOPLAMI", "BSMV", "ücret", "fee", "commission"), include that fee as its OWN separate "out" entry — do not fold it into the main transaction's amount and do not drop it.
 
-For each expense transaction (and each fee/commission line) found, return an object with:
+For each transaction (and each fee/commission line) found, return an object with:
 - "date": the transaction date as YYYY-MM-DD (the calendar year may not be printed — if missing, infer the most recent plausible year)
-- "description": a short label (merchant name, or the transaction type if no merchant is shown; for a fee line use something like "Transfer Commission")
+- "description": a short label (merchant name, counterparty, or the transaction type if neither is shown; for a fee line use something like "Transfer Commission")
 - "amount": a positive number (no currency symbol, no thousands separators, decimal point not comma)
 - "currency": a 3-letter code inferred from context (TL/TRY = TRY, LBP = LBP, $ or USDT = USD, EUR, etc.)
+- "direction": "out" if money left the account (spent, sent, withdrawn, fee), "in" if money entered it (received, deposited, income)
 
-Respond with ONLY a raw JSON array of these objects, nothing else — no markdown code fences, no explanation. If there are no expense transactions in the file, respond with [].`;
+Respond with ONLY a raw JSON array of these objects, nothing else — no markdown code fences, no explanation. If there are no transactions in the file, respond with [].`;
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";

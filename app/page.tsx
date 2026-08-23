@@ -547,13 +547,14 @@ const PayForm=({debt,onPay,onClose}:{debt:Debt;onPay:(n:number,note:string,date:
   </>);
 };
 
-interface ImportRow { id:string; date:string; description:string; amount:string; currency:string; scope:"personal"|"company"; category:string; accountId?:string; }
+interface ImportRow { id:string; date:string; description:string; amount:string; currency:string; direction:"in"|"out"; scope:"personal"|"company"; category:string; accountId?:string; expanded?:boolean; }
 
 const ImportReviewSheet=({rows,accounts,companyCategories,onImport,onClose}:{rows:ImportRow[];accounts:Account[];companyCategories:string[];onImport:(rows:ImportRow[])=>Promise<void>;onClose:()=>void})=>{
   const [list,setList]=useState(rows);
   const [importing,setImporting]=useState(false);
   const update=(id:string,patch:Partial<ImportRow>)=>setList(p=>p.map(r=>r.id===id?{...r,...patch}:r));
   const remove=(id:string)=>setList(p=>p.filter(r=>r.id!==id));
+  const toggleExpand=(id:string)=>setList(p=>p.map(r=>r.id===id?{...r,expanded:!r.expanded}:r));
   const handle=async()=>{
     setImporting(true);
     await onImport(list.filter(r=>!!r.amount&&parseFloat(r.amount)>0));
@@ -561,36 +562,52 @@ const ImportReviewSheet=({rows,accounts,companyCategories,onImport,onClose}:{row
     onClose();
   };
   if(list.length===0)return(<>
-    <EmptyState icon={IC.scan} color={D.gold} title="Nothing found" sub="No expense transactions were detected in that file."/>
+    <EmptyState icon={IC.scan} color={D.gold} title="Nothing found" sub="No transactions were detected in that file."/>
     <PrimaryBtn label="Close" onClick={onClose} color={D.gold}/>
   </>);
   return(<>
-    <div style={{fontSize:13,color:D.t2}}>{list.length} expense{list.length!==1?"s":""} found — review before importing. Remove any that look wrong.</div>
+    <div style={{fontSize:13,color:D.t2}}>{list.length} transaction{list.length!==1?"s":""} found — everything's pre-filled, nothing to type. Just remove any that aren't yours (e.g. for a friend or your brother), then import.</div>
     {list.map(r=>{
-      const baseCats=r.scope==="company"?COMPANY_OUT_CATS:PERSONAL_OUT_CATS;
+      const baseCats=r.scope==="company"?(r.direction==="in"?COMPANY_IN_CATS:COMPANY_OUT_CATS):(r.direction==="in"?PERSONAL_IN_CATS:PERSONAL_OUT_CATS);
       const cats=r.scope==="company"?[...baseCats,...companyCategories.filter(c=>!baseCats.includes(c))]:baseCats;
+      const c=r.direction==="in"?D.teal:D.rose;
       return(
         <div key={r.id} style={{background:D.s3,border:`1px solid ${D.b1}`,borderRadius:16,padding:16,display:"flex",flexDirection:"column",gap:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{fontSize:12,color:D.t3}}>Expense</div>
-            <button onClick={()=>remove(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:D.t3}}><G d={IC.x} s={15}/></button>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>toggleExpand(r.id)}>
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              <G d={r.direction==="in"?IC.arUp:IC.arDn} s={16} c={c}/>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:D.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{r.description||"(no description)"}</div>
+                <div style={{fontSize:11,color:D.t3}}>{r.date}</div>
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+              <span style={{fontSize:14,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums"}}>{r.direction==="in"?"+":"-"}{r.amount||"0"} {r.currency}</span>
+              <button onClick={e=>{e.stopPropagation();remove(r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:D.t3}}><G d={IC.x} s={15}/></button>
+            </div>
           </div>
-          <Inp label="Description" val={r.description} onChange={v=>update(r.id,{description:v})}/>
-          <div style={{display:"flex",gap:8}}>
-            <div style={{flex:1}}><Inp label="Amount" type="number" val={r.amount} onChange={v=>update(r.id,{amount:v})}/></div>
-            <div style={{width:100}}><Sel label="Currency" val={r.currency} onChange={v=>update(r.id,{currency:v})} opts={CURRENCIES.map(c=>({v:c.code,l:c.code}))}/></div>
-          </div>
-          <Inp label="Date" type="date" val={r.date} onChange={v=>update(r.id,{date:v})}/>
-          <div style={{display:"flex",gap:8}}>
-            <Chip label="Personal" active={r.scope==="personal"} color={D.violet} onClick={()=>update(r.id,{scope:"personal",category:""})}/>
-            <Chip label="Company" active={r.scope==="company"} color={D.gold} onClick={()=>update(r.id,{scope:"company",category:""})}/>
-          </div>
-          <ChipGroup label="Category" val={r.category} onChange={v=>update(r.id,{category:v})} opts={cats} color={r.scope==="company"?D.gold:D.rose}/>
-          <AccountPicker label="Paid With" val={r.accountId} onChange={v=>update(r.id,{accountId:v})} accounts={accounts} color={D.rose}/>
+          {r.expanded&&(<>
+            <Inp label="Description" val={r.description} onChange={v=>update(r.id,{description:v})}/>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{flex:1}}><Inp label="Amount" type="number" val={r.amount} onChange={v=>update(r.id,{amount:v})}/></div>
+              <div style={{width:100}}><Sel label="Currency" val={r.currency} onChange={v=>update(r.id,{currency:v})} opts={CURRENCIES.map(c=>({v:c.code,l:c.code}))}/></div>
+            </div>
+            <Inp label="Date" type="date" val={r.date} onChange={v=>update(r.id,{date:v})}/>
+            <div style={{display:"flex",gap:8}}>
+              <Chip label="Money In" active={r.direction==="in"} color={D.teal} onClick={()=>update(r.id,{direction:"in",category:""})}/>
+              <Chip label="Money Out" active={r.direction==="out"} color={D.rose} onClick={()=>update(r.id,{direction:"out",category:""})}/>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <Chip label="Personal" active={r.scope==="personal"} color={D.violet} onClick={()=>update(r.id,{scope:"personal",category:""})}/>
+              <Chip label="Company" active={r.scope==="company"} color={D.gold} onClick={()=>update(r.id,{scope:"company",category:""})}/>
+            </div>
+            <ChipGroup label="Category" val={r.category} onChange={v=>update(r.id,{category:v})} opts={cats} color={c}/>
+            <AccountPicker label={r.direction==="in"?"Deposited To":"Paid With"} val={r.accountId} onChange={v=>update(r.id,{accountId:v})} accounts={accounts} color={c}/>
+          </>)}
         </div>
       );
     })}
-    <PrimaryBtn label={importing?"Importing…":`Import ${list.length} Expense${list.length!==1?"s":""}`} onClick={handle} color={D.gold} disabled={importing||list.length===0}/>
+    <PrimaryBtn label={importing?"Importing…":`Import ${list.length} Transaction${list.length!==1?"s":""}`} onClick={handle} color={D.gold} disabled={importing||list.length===0}/>
   </>);
 };
 
@@ -853,9 +870,9 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     showToast("Order saved");
   },[showToast]);
 
-  // Bulk-imports reviewed expense rows from a receipt/screenshot scan. Keeps its own running
-  // balance/debt totals per account instead of reusing adjustAccountBalance/adjustCardDebt, since
-  // those read from React state that won't have updated yet between rows hitting the same account.
+  // Bulk-imports reviewed rows from a receipt/screenshot scan. Keeps its own running balance/debt
+  // totals per account instead of reusing adjustAccountBalance/adjustCardDebt, since those read
+  // from React state that won't have updated yet between rows hitting the same account.
   const importTxs=useCallback(async(rows:ImportRow[])=>{
     if(rows.length===0)return;
     try{
@@ -865,7 +882,8 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
       for(const r of rows){
         const amount=parseFloat(r.amount)||0;
         if(amount<=0)continue;
-        const type=(r.scope==="company"?"company_out":"personal_out") as TxType;
+        const isIncome=r.direction==="in";
+        const type=`${r.scope}_${r.direction}` as TxType;
         const category=r.category||"Other";
         const saved=await db.insertTx(userId,{type,amount,description:r.description||category,category,date:r.date||today(),notes:undefined,currency:r.currency,myShare:undefined,accountId:r.accountId});
         savedTxs.push(saved);
@@ -877,18 +895,18 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
               runningDebt.set(account.id,{id:existing?.id,total:existing?.totalAmount||0});
             }
             const cur=runningDebt.get(account.id)!;
-            runningDebt.set(account.id,{id:cur.id,total:cur.total+amount});
+            runningDebt.set(account.id,{id:cur.id,total:cur.total+(isIncome?-amount:amount)});
           }else if(account.balance!=null){
             if(!runningBalance.has(account.id))runningBalance.set(account.id,account.balance||0);
-            runningBalance.set(account.id,runningBalance.get(account.id)!-amount);
+            runningBalance.set(account.id,runningBalance.get(account.id)!+(isIncome?amount:-amount));
           }
         }
       }
       for(const [accountId,newBalance] of runningBalance)await db.setAccountBalance(accountId,newBalance);
       const newDebtsCreated:Debt[]=[];
       for(const [accountId,{id,total}] of runningDebt){
-        if(id)await db.setDebtTotal(id,total);
-        else{
+        if(id)await db.setDebtTotal(id,Math.max(0,total));
+        else if(total>0){
           const account=accounts.find(a=>a.id===accountId)!;
           const newDebt=await db.insertDebt(userId,{personBank:account.name,totalAmount:total,currency:account.currency,description:"Credit Card Spending"});
           newDebtsCreated.push(newDebt);
@@ -899,11 +917,11 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
       setDebts(p=>{
         const updated=p.map(d=>{
           const entry=[...runningDebt.entries()].find(([,v])=>v.id===d.id);
-          return entry?{...d,totalAmount:entry[1].total}:d;
+          return entry?{...d,totalAmount:Math.max(0,entry[1].total)}:d;
         });
         return [...newDebtsCreated,...updated];
       });
-      showToast(`Imported ${savedTxs.length} expense${savedTxs.length!==1?"s":""}`);
+      showToast(`Imported ${savedTxs.length} transaction${savedTxs.length!==1?"s":""}`);
     }catch(err){console.error(err);window.alert("Some transactions couldn't be imported. Please check and try again.");}
   },[userId,accounts,debts,showToast]);
 
@@ -1477,36 +1495,43 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [pwMsg,setPwMsg]=useState<{ok:boolean;text:string}|null>(null);
     const importInputRef=useRef<HTMLInputElement>(null);
     const [importBusy,setImportBusy]=useState(false);
+    const [importProgress,setImportProgress]=useState("");
     const [importErr,setImportErr]=useState("");
     const handleImportFile=async(e:React.ChangeEvent<HTMLInputElement>)=>{
-      const file=e.target.files?.[0];
+      const files=Array.from(e.target.files||[]);
       e.target.value="";
-      if(!file)return;
-      setImportBusy(true);setImportErr("");
+      if(files.length===0)return;
+      setImportBusy(true);setImportErr("");setImportProgress("");
       try{
         const {data:{session}}=await supabase.auth.getSession();
         const token=session?.access_token;
         if(!token)throw new Error("Not signed in.");
-        const form=new FormData();
-        form.append("file",file);
-        const res=await fetch("/api/import",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:form});
-        const data=await res.json();
-        if(!res.ok)throw new Error(data.error||"Import failed.");
-        const rows:ImportRow[]=(data.transactions||[]).map((t:{date?:string;description?:string;amount?:number;currency?:string})=>({
-          id:uid(),
-          date:t.date||today(),
-          description:t.description||"",
-          amount:t.amount!=null?String(t.amount):"",
-          currency:t.currency||settings.currency,
-          scope:"personal" as const,
-          category:"Other",
-          accountId:undefined,
-        }));
-        openSheet("import_review",{importRows:rows});
+        const allRows:ImportRow[]=[];
+        for(let i=0;i<files.length;i++){
+          setImportProgress(`Reading ${i+1} of ${files.length}…`);
+          const form=new FormData();
+          form.append("file",files[i]);
+          const res=await fetch("/api/import",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:form});
+          const data=await res.json();
+          if(!res.ok)throw new Error(data.error||`Couldn't read "${files[i].name}".`);
+          const rows:ImportRow[]=(data.transactions||[]).map((t:{date?:string;description?:string;amount?:number;currency?:string;direction?:string})=>({
+            id:uid(),
+            date:t.date||today(),
+            description:t.description||"",
+            amount:t.amount!=null?String(t.amount):"",
+            currency:t.currency||settings.currency,
+            direction:t.direction==="in"?"in":"out",
+            scope:"personal" as const,
+            category:"Other",
+            accountId:undefined,
+          }));
+          allRows.push(...rows);
+        }
+        openSheet("import_review",{importRows:allRows});
       }catch(err){
         setImportErr(err instanceof Error?err.message:"Couldn't read that file. Please try again.");
       }finally{
-        setImportBusy(false);
+        setImportBusy(false);setImportProgress("");
       }
     };
     useEffect(()=>{supabase.auth.getUser().then(({data})=>{if(data.user?.email)setEmail(data.user.email);});},[]);
@@ -1646,11 +1671,11 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
             </div>}
         </div>
 
-        {/* Import Expenses */}
-        <SectionCard icon={IC.scan} title="Import Expenses">
-          <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Upload a receipt PDF or a screenshot of your bank/crypto app — AI reads it and pulls out expense transactions (money out only) for you to review before anything is saved.</div>
-          <input ref={importInputRef} type="file" accept="image/*,application/pdf" style={{display:"none"}} onChange={handleImportFile}/>
-          <PrimaryBtn label={importBusy?"Reading…":"Scan a Receipt or Screenshot"} onClick={()=>importInputRef.current?.click()} color={D.gold} icon={IC.scan} disabled={importBusy}/>
+        {/* Import Transactions */}
+        <SectionCard icon={IC.scan} title="Import Transactions">
+          <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Upload receipt PDFs or screenshots (bank app, ATM confirmation, crypto exchange — select as many at once as you want) — AI reads them and pulls out every transaction, in or out. Nothing to type: just review, remove anything that isn't yours, and import.</div>
+          <input ref={importInputRef} type="file" accept="image/*,application/pdf" multiple style={{display:"none"}} onChange={handleImportFile}/>
+          <PrimaryBtn label={importBusy?(importProgress||"Reading…"):"Scan Receipts or Screenshots"} onClick={()=>importInputRef.current?.click()} color={D.gold} icon={IC.scan} disabled={importBusy}/>
           {importErr&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{importErr}</div>}
         </SectionCard>
 
@@ -1720,7 +1745,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     pay_debt:{title:`Pay — ${sheet.debt?.personBank||""}`},
     add_account:{title:sheet.editAccount?"Edit Payment Account":"Add Payment Account"},
     reorder_accounts:{title:"Reorder Accounts"},
-    import_review:{title:"Review Imported Expenses",tall:true},
+    import_review:{title:"Review Imported Transactions",tall:true},
   };
 
   const sheetBody=()=>{
