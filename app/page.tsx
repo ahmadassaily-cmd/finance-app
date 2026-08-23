@@ -1042,6 +1042,49 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const openSheet=(key:string,opts?:{debt?:Debt;editTx?:Tx;editMonthly?:Monthly;editDebt?:Debt;editAccount?:Account;importRows?:ImportRow[]})=>setSheet({open:true,key,...opts});
   const closeSheet=()=>setSheet({open:false,key:""});
 
+  // Scan-a-receipt flow, lifted here (rather than local to Settings) so Home and Company can trigger it too
+  const importInputRef=useRef<HTMLInputElement>(null);
+  const [importBusy,setImportBusy]=useState(false);
+  const [importProgress,setImportProgress]=useState("");
+  const [importErr,setImportErr]=useState("");
+  const handleImportFile=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const files=Array.from(e.target.files||[]);
+    e.target.value="";
+    if(files.length===0)return;
+    setImportBusy(true);setImportErr("");setImportProgress("");
+    try{
+      const {data:{session}}=await supabase.auth.getSession();
+      const token=session?.access_token;
+      if(!token)throw new Error("Not signed in.");
+      const allRows:ImportRow[]=[];
+      for(let i=0;i<files.length;i++){
+        setImportProgress(`Reading ${i+1} of ${files.length}…`);
+        const form=new FormData();
+        form.append("file",files[i]);
+        const res=await fetch("/api/import",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:form});
+        const data=await res.json();
+        if(!res.ok)throw new Error(data.error||`Couldn't read "${files[i].name}".`);
+        const rows:ImportRow[]=(data.transactions||[]).map((t:{date?:string;description?:string;amount?:number;currency?:string;direction?:string})=>({
+          id:uid(),
+          date:t.date||today(),
+          description:t.description||"",
+          amount:t.amount!=null?String(t.amount):"",
+          currency:t.currency||settings.currency,
+          direction:t.direction==="in"?"in":"out",
+          scope:"personal" as const,
+          category:"Other",
+          accountId:undefined,
+        }));
+        allRows.push(...rows);
+      }
+      openSheet("import_review",{importRows:allRows});
+    }catch(err){
+      setImportErr(err instanceof Error?err.message:"Couldn't read that file. Please try again.");
+    }finally{
+      setImportBusy(false);setImportProgress("");
+    }
+  };
+
   if(!ready)return<LoadingScreen fontFamily={font.style.fontFamily}/>;
 
   // ── HOME ───────────────────────────────────────────────────────
@@ -1049,18 +1092,16 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     <div>
       {/* Hero */}
       <div style={{padding:"40px 22px 28px",position:"relative",overflow:"hidden"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:12}}>
-          <div style={{fontSize:13,color:D.t2,whiteSpace:"nowrap" as const,overflow:"hidden",textOverflow:"ellipsis"}}>
-            {settings.name?`Welcome back, ${settings.name}`:"Total Money"}
-          </div>
-          <div style={{display:"flex",gap:6,flexShrink:0}}>
-            {Array.from(new Set([settings.currency,"TRY","LBP"])).map(c=>(
-              <button key={c} onClick={()=>setDisplayCurrency(c)}
-                style={{padding:"4px 9px",borderRadius:8,background:displayCurrency===c?D.goldDim:"transparent",border:`1px solid ${displayCurrency===c?D.gold:D.b1}`,color:displayCurrency===c?D.gold:D.t3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                {c}
-              </button>
-            ))}
-          </div>
+        <div style={{fontSize:13,color:D.t2,marginBottom:10}}>
+          {settings.name?`Welcome back, ${settings.name}`:"Total Money"}
+        </div>
+        <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap" as const}}>
+          {Array.from(new Set([settings.currency,"TRY","LBP"])).map(c=>(
+            <button key={c} onClick={()=>setDisplayCurrency(c)}
+              style={{padding:"5px 11px",borderRadius:8,background:displayCurrency===c?D.goldDim:D.s2,border:`1px solid ${displayCurrency===c?D.gold:D.b1}`,color:displayCurrency===c?D.gold:D.t2,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              {c}
+            </button>
+          ))}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:22}}>
           <div style={{fontSize:48,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1,fontVariantNumeric:"tabular-nums",color:D.t1}}>
@@ -1227,11 +1268,17 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           ))}
         </div>
 
-        {/* Add button */}
-        <button onClick={()=>openSheet(view==="monthly"?"company_monthly":view==="in"?"company_in":"company_out")}
-          style={{padding:"15px",background:col+"18",border:`1px solid ${col}44`,borderRadius:16,color:col,fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit"}}>
-          <G d={IC.plus} s={16} c={col}/>Add {view==="in"?"Revenue":view==="out"?"Expense":"Monthly Fixed Cost"}
-        </button>
+        {/* Add / Scan buttons */}
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>openSheet(view==="monthly"?"company_monthly":view==="in"?"company_in":"company_out")}
+            style={{flex:1,padding:"15px",background:col+"18",border:`1px solid ${col}44`,borderRadius:16,color:col,fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit"}}>
+            <G d={IC.plus} s={16} c={col}/>Add {view==="in"?"Revenue":view==="out"?"Expense":"Monthly Fixed Cost"}
+          </button>
+          <button onClick={()=>importInputRef.current?.click()} disabled={importBusy}
+            style={{flex:1,padding:"15px",background:D.goldDim,border:`1px solid ${D.gold}44`,borderRadius:16,color:D.gold,fontSize:14,fontWeight:800,cursor:importBusy?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:importBusy?0.6:1}}>
+            <G d={IC.scan} s={16} c={D.gold}/>{importBusy?(importProgress||"Reading…"):"Scan Receipts"}
+          </button>
+        </div>
 
         {view!=="monthly"&&<DateFilterBar value={dateFilter} onChange={setDateFilter} color={col}/>}
 
@@ -1493,47 +1540,6 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     const [newPw,setNewPw]=useState("");
     const [pwBusy,setPwBusy]=useState(false);
     const [pwMsg,setPwMsg]=useState<{ok:boolean;text:string}|null>(null);
-    const importInputRef=useRef<HTMLInputElement>(null);
-    const [importBusy,setImportBusy]=useState(false);
-    const [importProgress,setImportProgress]=useState("");
-    const [importErr,setImportErr]=useState("");
-    const handleImportFile=async(e:React.ChangeEvent<HTMLInputElement>)=>{
-      const files=Array.from(e.target.files||[]);
-      e.target.value="";
-      if(files.length===0)return;
-      setImportBusy(true);setImportErr("");setImportProgress("");
-      try{
-        const {data:{session}}=await supabase.auth.getSession();
-        const token=session?.access_token;
-        if(!token)throw new Error("Not signed in.");
-        const allRows:ImportRow[]=[];
-        for(let i=0;i<files.length;i++){
-          setImportProgress(`Reading ${i+1} of ${files.length}…`);
-          const form=new FormData();
-          form.append("file",files[i]);
-          const res=await fetch("/api/import",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:form});
-          const data=await res.json();
-          if(!res.ok)throw new Error(data.error||`Couldn't read "${files[i].name}".`);
-          const rows:ImportRow[]=(data.transactions||[]).map((t:{date?:string;description?:string;amount?:number;currency?:string;direction?:string})=>({
-            id:uid(),
-            date:t.date||today(),
-            description:t.description||"",
-            amount:t.amount!=null?String(t.amount):"",
-            currency:t.currency||settings.currency,
-            direction:t.direction==="in"?"in":"out",
-            scope:"personal" as const,
-            category:"Other",
-            accountId:undefined,
-          }));
-          allRows.push(...rows);
-        }
-        openSheet("import_review",{importRows:allRows});
-      }catch(err){
-        setImportErr(err instanceof Error?err.message:"Couldn't read that file. Please try again.");
-      }finally{
-        setImportBusy(false);setImportProgress("");
-      }
-    };
     useEffect(()=>{supabase.auth.getUser().then(({data})=>{if(data.user?.email)setEmail(data.user.email);});},[]);
     const changeEmail=async()=>{
       if(!email.includes("@")){setEmailMsg({ok:false,text:"Enter a valid email address."});return;}
@@ -1674,7 +1680,6 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         {/* Import Transactions */}
         <SectionCard icon={IC.scan} title="Import Transactions">
           <div style={{fontSize:12,color:D.t3,lineHeight:1.6}}>Upload receipt PDFs or screenshots (bank app, ATM confirmation, crypto exchange — select as many at once as you want) — AI reads them and pulls out every transaction, in or out. Nothing to type: just review, remove anything that isn't yours, and import.</div>
-          <input ref={importInputRef} type="file" accept="image/*,application/pdf" multiple style={{display:"none"}} onChange={handleImportFile}/>
           <PrimaryBtn label={importBusy?(importProgress||"Reading…"):"Scan Receipts or Screenshots"} onClick={()=>importInputRef.current?.click()} color={D.gold} icon={IC.scan} disabled={importBusy}/>
           {importErr&&<div style={{fontSize:13,color:D.rose,background:D.roseDim,border:`1px solid ${D.rose}33`,borderRadius:12,padding:"10px 14px"}}>{importErr}</div>}
         </SectionCard>
@@ -1766,6 +1771,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
 
   return(
     <div className={font.className} style={{background:D.bg,minHeight:"100vh",width:"100%",maxWidth:480,margin:"0 auto",color:D.t1,overflowX:"hidden" as const,boxSizing:"border-box" as const}}>
+      <input ref={importInputRef} type="file" accept="image/*,application/pdf" multiple style={{display:"none"}} onChange={handleImportFile}/>
       <div style={{paddingBottom:88}}>
         {tab==="home"&&<HomeTab/>}
         {tab==="company"&&<CompanyTab/>}
@@ -1787,12 +1793,17 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         )}
       </button>
 
-      {/* Quick add — daily expense, reachable from any tab */}
+      {/* Quick add — daily expense on most tabs; scan receipts on Home */}
       {tab!=="settings"&&!sheet.open&&(
-        <button onClick={()=>openSheet("personal_out")} aria-label="Add expense"
-          style={{position:"fixed",bottom:96,right:"max(18px, calc(50vw - 222px))",width:54,height:54,borderRadius:14,background:D.rose,border:"none",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:99}}>
-          <G d={IC.plus} s={24} c="#fff"/>
-        </button>
+        tab==="home"
+          ?<button onClick={()=>importInputRef.current?.click()} aria-label="Scan receipts" disabled={importBusy}
+              style={{position:"fixed",bottom:96,right:"max(18px, calc(50vw - 222px))",width:54,height:54,borderRadius:14,background:D.gold,border:"none",color:"#fff",cursor:importBusy?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:99,opacity:importBusy?0.6:1}}>
+              <G d={IC.scan} s={22} c="#fff"/>
+            </button>
+          :<button onClick={()=>openSheet("personal_out")} aria-label="Add expense"
+              style={{position:"fixed",bottom:96,right:"max(18px, calc(50vw - 222px))",width:54,height:54,borderRadius:14,background:D.rose,border:"none",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:99}}>
+              <G d={IC.plus} s={24} c="#fff"/>
+            </button>
       )}
 
       {/* Floating pill nav */}
