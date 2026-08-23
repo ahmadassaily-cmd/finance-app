@@ -971,6 +971,39 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
   const cryptoMoney=accounts.filter(a=>a.kind==="crypto").reduce((s,a)=>s+toBase(a.balance||0,a.currency),0);
   const totalAccountsMoney=bankMoney+creditMoney+cryptoMoney;
 
+  // Converts a base-currency (settings.currency) amount into an arbitrary display currency —
+  // the inverse of toBase — using the same manual rates, for Home's view-only currency switcher.
+  const fromBase=(amountInBase:number,displayCur:string)=>{
+    if(displayCur===settings.currency)return amountInBase;
+    if(settings.currency==="USD"&&displayCur==="TRY")return settings.usdTryRate?amountInBase*settings.usdTryRate:amountInBase;
+    if(settings.currency==="TRY"&&displayCur==="USD")return settings.usdTryRate?amountInBase/settings.usdTryRate:amountInBase;
+    if(settings.currency==="USD"&&displayCur==="LBP")return settings.usdLbpRate?amountInBase*settings.usdLbpRate:amountInBase;
+    if(settings.currency==="LBP"&&displayCur==="USD")return settings.usdLbpRate?amountInBase/settings.usdLbpRate:amountInBase;
+    return amountInBase;
+  };
+  const [displayCurrencyOverride,setDisplayCurrencyOverride]=useState<string|null>(()=>{
+    if(typeof window==="undefined")return null;
+    return localStorage.getItem("fos_display_currency");
+  });
+  const displayCurrency=displayCurrencyOverride||settings.currency;
+  const setDisplayCurrency=(c:string)=>{
+    setDisplayCurrencyOverride(c);
+    if(typeof window!=="undefined")localStorage.setItem("fos_display_currency",c);
+  };
+  const dispSym=sym(displayCurrency);
+  const disp=(v:number)=>fromBase(v,displayCurrency);
+  const [hideBalance,setHideBalance]=useState(()=>{
+    if(typeof window==="undefined")return false;
+    return localStorage.getItem("fos_hide_balance")==="1";
+  });
+  const toggleHideBalance=()=>{
+    setHideBalance(h=>{
+      const next=!h;
+      if(typeof window!=="undefined")localStorage.setItem("fos_hide_balance",next?"1":"0");
+      return next;
+    });
+  };
+
   // This month
   const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
   const mTxs=txs.filter(t=>{const d=new Date(t.date);return d.getMonth()===cm&&d.getFullYear()===cy;});
@@ -998,14 +1031,29 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
     <div>
       {/* Hero */}
       <div style={{padding:"40px 22px 28px",position:"relative",overflow:"hidden"}}>
-        <div style={{fontSize:13,color:D.t2,marginBottom:12}}>
-          {settings.name?`Welcome back, ${settings.name}`:"Total Money"}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:12}}>
+          <div style={{fontSize:13,color:D.t2,whiteSpace:"nowrap" as const,overflow:"hidden",textOverflow:"ellipsis"}}>
+            {settings.name?`Welcome back, ${settings.name}`:"Total Money"}
+          </div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            {Array.from(new Set([settings.currency,"TRY","LBP"])).map(c=>(
+              <button key={c} onClick={()=>setDisplayCurrency(c)}
+                style={{padding:"4px 9px",borderRadius:8,background:displayCurrency===c?D.goldDim:"transparent",border:`1px solid ${displayCurrency===c?D.gold:D.b1}`,color:displayCurrency===c?D.gold:D.t3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                {c}
+              </button>
+            ))}
+          </div>
         </div>
-        <div style={{fontSize:48,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1,marginBottom:22,fontVariantNumeric:"tabular-nums",color:D.t1}}>
-          {totalAccountsMoney<0?"-":""}{money(Math.abs(totalAccountsMoney),S,true)}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:22}}>
+          <div style={{fontSize:48,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1,fontVariantNumeric:"tabular-nums",color:D.t1}}>
+            {hideBalance?"••••••":`${disp(totalAccountsMoney)<0?"-":""}${money(Math.abs(disp(totalAccountsMoney)),dispSym,true)}`}
+          </div>
+          <button onClick={toggleHideBalance} aria-label={hideBalance?"Show balance":"Hide balance"} style={{background:"none",border:"none",cursor:"pointer",color:D.t3,padding:4,display:"flex"}}>
+            <G d={hideBalance?IC.eyeOff:IC.eye} s={20}/>
+          </button>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",rowGap:16,columnGap:24}}>
-          {[{l:"Savings",v:money(settings.savings||0,S,true),c:D.gold},{l:"Personal Income",v:money(personalIncomeTotal,S,true),c:D.teal},{l:"Personal Cash",v:money(personalCash,S,true),c:personalCash>=0?D.t1:D.rose},{l:"My Cut",v:money(myCut,S,true),c:D.gold},{l:"Debts Left",v:money(totalDebtLeft,S,true),c:D.rose}].map(s=>(
+          {[{l:"Savings",v:money(disp(settings.savings||0),dispSym,true),c:D.gold},{l:"Personal Income",v:money(disp(personalIncomeTotal),dispSym,true),c:D.teal},{l:"Personal Cash",v:money(disp(personalCash),dispSym,true),c:personalCash>=0?D.t1:D.rose},{l:"My Cut",v:money(disp(myCut),dispSym,true),c:D.gold},{l:"Debts Left",v:money(disp(totalDebtLeft),dispSym,true),c:D.rose}].map(s=>(
             <div key={s.l}><div style={{fontSize:11,color:D.t3,marginBottom:4}}>{s.l}</div><div style={{fontSize:15,fontWeight:800,color:s.c,fontVariantNumeric:"tabular-nums"}}>{s.v}</div></div>
           ))}
         </div>
@@ -1037,7 +1085,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         {accounts.length>0&&(
           <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20}}>
             <div style={{fontSize:11,fontWeight:700,color:D.t2,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:6}}>Total Money</div>
-            <div style={{fontSize:30,fontWeight:900,color:totalAccountsMoney>=0?D.t1:D.rose,fontVariantNumeric:"tabular-nums",marginBottom:16}}>{totalAccountsMoney<0?"-":""}{money(Math.abs(totalAccountsMoney),S,true)}</div>
+            <div style={{fontSize:30,fontWeight:900,color:totalAccountsMoney>=0?D.t1:D.rose,fontVariantNumeric:"tabular-nums",marginBottom:16}}>{hideBalance?"••••••":`${disp(totalAccountsMoney)<0?"-":""}${money(Math.abs(disp(totalAccountsMoney)),dispSym,true)}`}</div>
             {[
               {l:"Banks",v:bankMoney,c:D.t1},
               {l:"Credit Cards",v:creditMoney,c:creditMoney<0?D.rose:D.t1},
@@ -1047,7 +1095,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
             ].map((row,i)=>(
               <div key={row.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:i<4?`1px solid ${D.b0}`:"none"}}>
                 <span style={{fontSize:13,color:D.t2}}>{row.l}</span>
-                <span style={{fontSize:14,fontWeight:800,color:row.c,fontVariantNumeric:"tabular-nums"}}>{row.v<0?"-":""}{money(Math.abs(row.v),S,true)}</span>
+                <span style={{fontSize:14,fontWeight:800,color:row.c,fontVariantNumeric:"tabular-nums"}}>{disp(row.v)<0?"-":""}{money(Math.abs(disp(row.v)),dispSym,true)}</span>
               </div>
             ))}
           </div>
@@ -1058,13 +1106,13 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:"18px 16px"}}>
             <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:10}}>Company Revenue</div>
-            <div style={{fontSize:24,fontWeight:900,color:D.teal,fontVariantNumeric:"tabular-nums",marginBottom:6}}>{money(mCompIn,S,true)}</div>
-            <div style={{fontSize:11,color:D.gold}}>My cut: {money(mMyCut,S,true)}</div>
+            <div style={{fontSize:24,fontWeight:900,color:D.teal,fontVariantNumeric:"tabular-nums",marginBottom:6}}>{money(disp(mCompIn),dispSym,true)}</div>
+            <div style={{fontSize:11,color:D.gold}}>My cut: {money(disp(mMyCut),dispSym,true)}</div>
           </div>
           <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:"18px 16px"}}>
             <div style={{fontSize:10,color:D.t2,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase" as const,marginBottom:10}}>Company Expenses</div>
-            <div style={{fontSize:24,fontWeight:900,color:D.rose,fontVariantNumeric:"tabular-nums",marginBottom:6}}>{money(mCompOut,S,true)}</div>
-            <div style={{fontSize:11,color:D.t2}}>Personal: {money(mPerOut,S,true)}</div>
+            <div style={{fontSize:24,fontWeight:900,color:D.rose,fontVariantNumeric:"tabular-nums",marginBottom:6}}>{money(disp(mCompOut),dispSym,true)}</div>
+            <div style={{fontSize:11,color:D.t2}}>Personal: {money(disp(mPerOut),dispSym,true)}</div>
           </div>
         </div>
 
@@ -1080,7 +1128,7 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           ].map((row,i)=>(
             <div key={row.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 0",borderBottom:i<4?`1px solid ${D.b0}`:"none"}}>
               <span style={{fontSize:13,color:D.t2}}>{row.l}</span>
-              <span style={{fontSize:14,fontWeight:800,color:row.c,fontVariantNumeric:"tabular-nums"}}>{money(row.v,S,true)}{row.sub||""}</span>
+              <span style={{fontSize:14,fontWeight:800,color:row.c,fontVariantNumeric:"tabular-nums"}}>{money(disp(row.v),dispSym,true)}{row.sub||""}</span>
             </div>
           ))}
         </div>
@@ -1090,11 +1138,11 @@ function FinanceApp({userId,onSignOut}:{userId:string;onSignOut:()=>void}){
           <div style={{background:D.s2,border:`1px solid ${D.b1}`,borderRadius:20,padding:20}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <div style={{fontSize:11,fontWeight:700,color:D.t2,letterSpacing:"0.08em",textTransform:"uppercase" as const}}>Debt Progress</div>
-              <div style={{fontSize:13,fontWeight:700,color:D.rose,fontVariantNumeric:"tabular-nums"}}>{money(totalDebtLeft,S,true)} left</div>
+              <div style={{fontSize:13,fontWeight:700,color:D.rose,fontVariantNumeric:"tabular-nums"}}>{money(disp(totalDebtLeft),dispSym,true)} left</div>
             </div>
             <Prog val={totalDebtOrig>0?(totalDebtPaid/totalDebtOrig)*100:0} col={D.teal} h={6}/>
             <div style={{display:"flex",justifyContent:"space-between",marginTop:10}}>
-              <span style={{fontSize:12,color:D.teal}}>Paid {money(totalDebtPaid,S,true)}</span>
+              <span style={{fontSize:12,color:D.teal}}>Paid {money(disp(totalDebtPaid),dispSym,true)}</span>
               <span style={{fontSize:12,color:D.t3}}>{totalDebtOrig>0?Math.round((totalDebtPaid/totalDebtOrig)*100):0}% done</span>
             </div>
           </div>
