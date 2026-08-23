@@ -11,9 +11,11 @@ const authClient = createClient(
 
 const EXTRACTION_PROMPT = `You are reading a bank receipt, a screenshot of a banking app's transaction list, or a screenshot of a crypto exchange. Extract ONLY the transactions that represent money going OUT (expenses, purchases, withdrawals, transfers sent) — a debit, usually shown with a minus sign or in a "spent"/"sent" context. Skip anything that is money coming IN (deposits, income, credits, transfers received).
 
-For each expense transaction found, return an object with:
+If a transfer, withdrawal, or transaction shows a separate commission/fee line (e.g. "MASRAF", "KOMİSYON", "KOMİSYON TOPLAMI", "BSMV", "ücret", "fee", "commission"), include that fee as its OWN separate expense entry — do not fold it into the main transaction's amount and do not drop it.
+
+For each expense transaction (and each fee/commission line) found, return an object with:
 - "date": the transaction date as YYYY-MM-DD (the calendar year may not be printed — if missing, infer the most recent plausible year)
-- "description": a short label (merchant name, or the transaction type if no merchant is shown)
+- "description": a short label (merchant name, or the transaction type if no merchant is shown; for a fee line use something like "Transfer Commission")
 - "amount": a positive number (no currency symbol, no thousands separators, decimal point not comma)
 - "currency": a 3-letter code inferred from context (TL/TRY = TRY, LBP = LBP, $ or USDT = USD, EUR, etc.)
 
